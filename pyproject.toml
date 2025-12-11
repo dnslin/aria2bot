@@ -1,0 +1,13 @@
+[project]
+name = "aria2bot"
+version = "0.1.0"
+description = "This is a bot that uses tg to control the server to operate aria2 to download files."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "python-dotenv>=1.2.1",
+    "python-telegram-bot>=21.0",
+]
+
+[project.scripts]
+aria2bot = "main:main"
