@@ -44,5 +44,5 @@ Flow: Telegram command → `Aria2BotAPI` handler → `Aria2Installer` or `Aria2S
 
 ## Bot Commands
 
-/install, /uninstall, /start, /stop, /restart, /status, /logs, /clear_logs, /help
+/install, /uninstall, /start, /stop, /restart, /status, /logs, /clear_logs, /set_secret, /reset_secret, /help
 
