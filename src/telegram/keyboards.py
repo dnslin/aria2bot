@@ -89,7 +89,10 @@ def build_detail_keyboard(gid: str, status: str) -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup([
         buttons,
-        [InlineKeyboardButton("🔙 返回列表", callback_data="list:menu")],
+        [
+            InlineKeyboardButton("🔄 刷新", callback_data=f"refresh:{gid}"),
+            InlineKeyboardButton("🔙 返回列表", callback_data="list:menu"),
+        ],
     ])
 
 

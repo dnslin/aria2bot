@@ -42,12 +42,15 @@ def _get_user_info(update: Update) -> str:
     return "未知用户"
 
 
+import asyncio
+
 class Aria2BotAPI:
     def __init__(self, config: Aria2Config | None = None):
         self.config = config or Aria2Config()
         self.installer = Aria2Installer(self.config)
         self.service = Aria2ServiceManager()
         self._rpc: Aria2RpcClient | None = None
+        self._auto_refresh_tasks: dict[str, asyncio.Task] = {}  # chat_id:msg_id -> task
 
     def _get_rpc_client(self) -> Aria2RpcClient:
         """获取或创建 RPC 客户端"""
@@ -426,6 +429,11 @@ class Aria2BotAPI:
         parts = data.split(":")
         action = parts[0]
 
+        # 点击非详情相关按钮时，停止该消息的自动刷新
+        if action not in ("detail", "refresh", "pause", "resume"):
+            key = f"{query.message.chat_id}:{query.message.message_id}"
+            self._stop_auto_refresh(key)
+
         try:
             rpc = self._get_rpc_client()
 
@@ -440,6 +448,8 @@ class Aria2BotAPI:
             elif action == "confirm_del":
                 await self._handle_confirm_delete_callback(query, rpc, parts[1], parts[2])
             elif action == "detail":
+                await self._handle_detail_callback(query, rpc, parts[1])
+            elif action == "refresh":
                 await self._handle_detail_callback(query, rpc, parts[1])
             elif action == "stats":
                 await self._handle_stats_callback(query, rpc)
@@ -533,22 +543,14 @@ class Aria2BotAPI:
         await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _handle_pause_callback(self, query, rpc: Aria2RpcClient, gid: str) -> None:
-        """处理暂停回调"""
+        """处理暂停回调，然后返回详情页继续刷新"""
         await rpc.pause(gid)
-        task = await rpc.get_status(gid)
-        safe_name = task.name.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
-        keyboard = build_task_keyboard(gid, task.status)
-        await query.edit_message_text(f"⏸️ 任务已暂停\n📄 {safe_name}\n🆔 GID: `{gid}`",
-                                      parse_mode="Markdown", reply_markup=keyboard)
+        await self._handle_detail_callback(query, rpc, gid)
 
     async def _handle_resume_callback(self, query, rpc: Aria2RpcClient, gid: str) -> None:
-        """处理恢复回调"""
+        """处理恢复回调，然后返回详情页继续刷新"""
         await rpc.unpause(gid)
-        task = await rpc.get_status(gid)
-        safe_name = task.name.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
-        keyboard = build_task_keyboard(gid, task.status)
-        await query.edit_message_text(f"▶️ 任务已恢复\n📄 {safe_name}\n🆔 GID: `{gid}`",
-                                      parse_mode="Markdown", reply_markup=keyboard)
+        await self._handle_detail_callback(query, rpc, gid)
 
     async def _handle_delete_callback(self, query, gid: str) -> None:
         """处理删除确认回调"""
@@ -588,26 +590,67 @@ class Aria2BotAPI:
 
         await query.edit_message_text(msg, parse_mode="Markdown")
 
-    async def _handle_detail_callback(self, query, rpc: Aria2RpcClient, gid: str) -> None:
-        """处理详情回调"""
-        task = await rpc.get_status(gid)
-        emoji = STATUS_EMOJI.get(task.status, "❓")
-        safe_name = task.name.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
-        text = (
-            f"📋 *任务详情*\n"
-            f"📄 文件: {safe_name}\n"
-            f"🆔 GID: `{task.gid}`\n"
-            f"📊 状态: {emoji} {task.status}\n"
-            f"📈 进度: {task.progress_bar} {task.progress:.1f}%\n"
-            f"📦 大小: {task.size_str}\n"
-            f"⬇️ 下载: {task.speed_str}\n"
-            f"⬆️ 上传: {_format_size(task.upload_speed)}/s"
-        )
-        if task.error_message:
-            text += f"\n❌ 错误: {task.error_message}"
+    def _stop_auto_refresh(self, key: str) -> None:
+        """停止自动刷新任务"""
+        if key in self._auto_refresh_tasks:
+            self._auto_refresh_tasks[key].cancel()
+            del self._auto_refresh_tasks[key]
 
-        keyboard = build_detail_keyboard(gid, task.status)
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    async def _handle_detail_callback(self, query, rpc: Aria2RpcClient, gid: str) -> None:
+        """处理详情回调，启动自动刷新"""
+        chat_id = query.message.chat_id
+        msg_id = query.message.message_id
+        key = f"{chat_id}:{msg_id}"
+
+        # 停止该消息之前的刷新任务
+        self._stop_auto_refresh(key)
+
+        # 启动新的自动刷新任务
+        task = asyncio.create_task(self._auto_refresh_detail(query.message, rpc, gid, key))
+        self._auto_refresh_tasks[key] = task
+
+    async def _auto_refresh_detail(self, message, rpc: Aria2RpcClient, gid: str, key: str) -> None:
+        """自动刷新详情页面"""
+        try:
+            last_text = ""
+            for _ in range(60):  # 最多刷新 2 分钟
+                try:
+                    task = await rpc.get_status(gid)
+                except RpcError:
+                    break
+
+                emoji = STATUS_EMOJI.get(task.status, "❓")
+                safe_name = task.name.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
+                text = (
+                    f"📋 *任务详情*\n"
+                    f"📄 文件: {safe_name}\n"
+                    f"🆔 GID: `{task.gid}`\n"
+                    f"📊 状态: {emoji} {task.status}\n"
+                    f"📈 进度: {task.progress_bar} {task.progress:.1f}%\n"
+                    f"📦 大小: {task.size_str}\n"
+                    f"⬇️ 下载: {task.speed_str}\n"
+                    f"⬆️ 上传: {_format_size(task.upload_speed)}/s"
+                )
+                if task.error_message:
+                    text += f"\n❌ 错误: {task.error_message}"
+
+                keyboard = build_detail_keyboard(gid, task.status)
+
+                # 只有内容变化时才更新
+                if text != last_text:
+                    try:
+                        await message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+                        last_text = text
+                    except Exception:
+                        break
+
+                # 任务完成或出错时停止刷新
+                if task.status in ("complete", "error", "removed"):
+                    break
+
+                await asyncio.sleep(2)
+        finally:
+            self._auto_refresh_tasks.pop(key, None)
 
     async def _handle_stats_callback(self, query, rpc: Aria2RpcClient) -> None:
         """处理统计回调"""
