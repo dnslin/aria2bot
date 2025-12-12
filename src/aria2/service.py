@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import subprocess
 
+from src.utils.logger import get_logger
+
 from src.core import (
     ARIA2_BIN,
     ARIA2_CONF,
@@ -30,6 +32,8 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 """
+
+logger = get_logger("service")
 
 
 class Aria2ServiceManager:
@@ -63,16 +67,22 @@ class Aria2ServiceManager:
             raise ServiceError(f"Failed to write service file: {exc}") from exc
 
     def start(self) -> None:
+        logger.info("正在启动 aria2 服务...")
         if not is_aria2_installed():
             raise NotInstalledError("aria2 is not installed")
         self._ensure_service_file()
         self._run_systemctl("start", "aria2")
+        logger.info("aria2 服务已启动")
 
     def stop(self) -> None:
+        logger.info("正在停止 aria2 服务...")
         self._run_systemctl("stop", "aria2")
+        logger.info("aria2 服务已停止")
 
     def restart(self) -> None:
+        logger.info("正在重启 aria2 服务...")
         self._run_systemctl("restart", "aria2")
+        logger.info("aria2 服务已重启")
 
     def enable(self) -> None:
         self._run_systemctl("enable", "aria2")
@@ -81,6 +91,7 @@ class Aria2ServiceManager:
         self._run_systemctl("disable", "aria2")
 
     def status(self) -> dict:
+        logger.info("正在获取 aria2 服务状态...")
         installed = is_aria2_installed()
         pid = self.get_pid() if installed else None
 
@@ -103,6 +114,7 @@ class Aria2ServiceManager:
         running = active_proc.returncode == 0
         enabled = enabled_proc.returncode == 0
 
+        logger.info(f"aria2 状态: 已安装={installed}, 运行中={running}, PID={pid}")
         return {
             "installed": installed,
             "running": running,
