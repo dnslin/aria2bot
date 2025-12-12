@@ -67,6 +67,7 @@ def run() -> None:
     async def main():
         async with app:
             await app.start()
+            await post_init(app)
             await app.updater.start_polling()
             await asyncio.Event().wait()
 
