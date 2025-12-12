@@ -14,6 +14,7 @@ from src.core import (
     SYSTEMD_USER_DIR,
     ServiceError,
     NotInstalledError,
+    ConfigError,
     is_aria2_installed,
 )
 
@@ -180,3 +181,27 @@ class Aria2ServiceManager:
         except OSError as exc:
             raise ServiceError(f"Failed to remove service file: {exc}") from exc
         self._run_systemctl("daemon-reload")
+
+    def update_rpc_secret(self, new_secret: str) -> None:
+        """更新 aria2.conf 中的 rpc-secret 配置"""
+        if not ARIA2_CONF.exists():
+            raise ConfigError("aria2.conf 不存在，请先安装 aria2")
+        try:
+            content = ARIA2_CONF.read_text(encoding="utf-8")
+            lines = content.splitlines()
+            new_lines = []
+            found = False
+            for line in lines:
+                stripped = line.lstrip()
+                if stripped.startswith("rpc-secret="):
+                    prefix = line[: len(line) - len(stripped)]
+                    new_lines.append(f"{prefix}rpc-secret={new_secret}")
+                    found = True
+                else:
+                    new_lines.append(line)
+            if not found:
+                new_lines.append(f"rpc-secret={new_secret}")
+            ARIA2_CONF.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            logger.info("RPC 密钥已更新")
+        except OSError as exc:
+            raise ConfigError(f"更新配置文件失败: {exc}") from exc

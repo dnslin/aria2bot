@@ -15,6 +15,7 @@ from src.core import (
     ConfigError,
     is_aria2_installed,
     get_aria2_version,
+    generate_rpc_secret,
     ARIA2_CONF,
 )
 from src.aria2 import Aria2Installer, Aria2ServiceManager
@@ -229,6 +230,52 @@ class Aria2BotAPI:
             logger.error(f"/clear_logs 命令执行失败(未知错误): {exc} - {_get_user_info(update)}")
             await self._reply(update, context, f"清空日志失败，发生未知错误：{exc}")
 
+    async def set_secret(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """设置自定义 RPC 密钥"""
+        logger.info(f"收到 /set_secret 命令 - {_get_user_info(update)}")
+        if not context.args or len(context.args) != 1:
+            await self._reply(update, context, "用法: /set_secret <密钥>\n密钥长度需为 16 位")
+            return
+        new_secret = context.args[0]
+        if len(new_secret) != 16:
+            await self._reply(update, context, "密钥长度需为 16 位")
+            return
+        try:
+            self.service.update_rpc_secret(new_secret)
+            self.config.rpc_secret = new_secret
+            self.service.restart()
+            await self._reply(update, context, f"RPC 密钥已更新并重启服务 ✅\n新密钥: `{new_secret}`", parse_mode="Markdown")
+            logger.info(f"/set_secret 命令执行成功 - {_get_user_info(update)}")
+        except ConfigError as exc:
+            logger.error(f"/set_secret 命令执行失败: {exc} - {_get_user_info(update)}")
+            await self._reply(update, context, f"设置密钥失败：{exc}")
+        except ServiceError as exc:
+            logger.error(f"/set_secret 命令执行失败(重启服务): {exc} - {_get_user_info(update)}")
+            await self._reply(update, context, f"密钥已更新但重启服务失败：{exc}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"/set_secret 命令执行失败(未知错误): {exc} - {_get_user_info(update)}")
+            await self._reply(update, context, f"设置密钥失败，发生未知错误：{exc}")
+
+    async def reset_secret(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """重新生成随机 RPC 密钥"""
+        logger.info(f"收到 /reset_secret 命令 - {_get_user_info(update)}")
+        try:
+            new_secret = generate_rpc_secret()
+            self.service.update_rpc_secret(new_secret)
+            self.config.rpc_secret = new_secret
+            self.service.restart()
+            await self._reply(update, context, f"RPC 密钥已重新生成并重启服务 ✅\n新密钥: `{new_secret}`", parse_mode="Markdown")
+            logger.info(f"/reset_secret 命令执行成功 - {_get_user_info(update)}")
+        except ConfigError as exc:
+            logger.error(f"/reset_secret 命令执行失败: {exc} - {_get_user_info(update)}")
+            await self._reply(update, context, f"重置密钥失败：{exc}")
+        except ServiceError as exc:
+            logger.error(f"/reset_secret 命令执行失败(重启服务): {exc} - {_get_user_info(update)}")
+            await self._reply(update, context, f"密钥已更新但重启服务失败：{exc}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"/reset_secret 命令执行失败(未知错误): {exc} - {_get_user_info(update)}")
+            await self._reply(update, context, f"重置密钥失败，发生未知错误：{exc}")
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info(f"收到 /help 命令 - {_get_user_info(update)}")
         commands = [
@@ -240,6 +287,8 @@ class Aria2BotAPI:
             "/status - 查看 aria2 状态",
             "/logs - 查看最近日志",
             "/clear_logs - 清空日志",
+            "/set_secret <密钥> - 设置自定义 RPC 密钥",
+            "/reset_secret - 重新生成随机 RPC 密钥",
             "/help - 显示此帮助",
         ]
         await self._reply(update, context, "可用命令：\n" + "\n".join(commands))
@@ -256,5 +305,7 @@ def build_handlers(api: Aria2BotAPI) -> list[CommandHandler]:
         CommandHandler("status", api.status),
         CommandHandler("logs", api.view_logs),
         CommandHandler("clear_logs", api.clear_logs),
+        CommandHandler("set_secret", api.set_secret),
+        CommandHandler("reset_secret", api.reset_secret),
         CommandHandler("help", api.help_command),
     ]
