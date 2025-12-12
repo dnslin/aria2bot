@@ -20,6 +20,7 @@ from src.core.exceptions import (
     ConfigError,
     ServiceError,
     NotInstalledError,
+    RpcError,
 )
 from src.core.config import Aria2Config, BotConfig
 from src.core.system import (
@@ -49,6 +50,7 @@ __all__ = [
     "ConfigError",
     "ServiceError",
     "NotInstalledError",
+    "RpcError",
     "Aria2Config",
     "BotConfig",
     "detect_os",

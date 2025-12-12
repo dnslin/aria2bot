@@ -27,3 +27,7 @@ class ServiceError(Aria2Error):
 
 class NotInstalledError(Aria2Error):
     """aria2 未安装"""
+
+
+class RpcError(Aria2Error):
+    """RPC 调用失败"""

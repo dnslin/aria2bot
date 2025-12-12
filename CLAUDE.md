@@ -29,11 +29,11 @@ Copy `.env.example` to `.env` and set:
 
 Three-layer design:
 
-- `src/telegram/` - Bot interface (handlers.py defines commands, app.py runs polling)
-- `src/aria2/` - aria2 management (installer.py downloads/configures, service.py manages systemd)
+- `src/telegram/` - Bot interface (handlers.py defines commands, keyboards.py builds inline keyboards, app.py runs polling)
+- `src/aria2/` - aria2 management (installer.py downloads/configures, service.py manages systemd, rpc.py communicates with aria2)
 - `src/core/` - Shared utilities (constants, config dataclasses, exceptions, system detection)
 
-Flow: Telegram command → `Aria2BotAPI` handler → `Aria2Installer` or `Aria2ServiceManager` → system
+Flow: Telegram command → `Aria2BotAPI` handler → `Aria2Installer` or `Aria2ServiceManager` or `Aria2RpcClient` → system/aria2
 
 ## Key Paths (defined in src/core/constants.py)
 
@@ -44,5 +44,11 @@ Flow: Telegram command → `Aria2BotAPI` handler → `Aria2Installer` or `Aria2S
 
 ## Bot Commands
 
-/install, /uninstall, /start, /stop, /restart, /status, /logs, /clear_logs, /set_secret, /reset_secret, /help
+服务管理: /install, /uninstall, /start, /stop, /restart, /status, /logs, /clear_logs, /set_secret, /reset_secret
+
+下载管理: /add <URL>, /list, /stats
+
+其他: /help
+
+支持发送 .torrent 文件直接添加下载任务
 
