@@ -29,7 +29,20 @@ from src.telegram.keyboards import (
     build_delete_confirm_keyboard,
     build_detail_keyboard,
     build_after_add_keyboard,
+    build_main_reply_keyboard,
 )
+
+# Reply Keyboard 按钮文本到命令的映射
+BUTTON_COMMANDS = {
+    "📥 下载列表": "list",
+    "📊 统计": "stats",
+    "▶️ 启动": "start",
+    "⏹ 停止": "stop",
+    "🔄 重启": "restart",
+    "📋 状态": "status",
+    "📜 日志": "logs",
+    "❓ 帮助": "help",
+}
 
 logger = get_logger("handlers")
 
@@ -325,9 +338,41 @@ class Aria2BotAPI:
             "/list - 查看下载列表",
             "/stats - 全局下载统计",
             "",
+            "/menu - 显示快捷菜单",
             "/help - 显示此帮助",
         ]
         await self._reply(update, context, "可用命令：\n" + "\n".join(commands), parse_mode="Markdown")
+
+    async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """处理 /menu 命令，显示 Reply Keyboard 主菜单"""
+        logger.info(f"收到 /menu 命令 - {_get_user_info(update)}")
+        keyboard = build_main_reply_keyboard()
+        await self._reply(
+            update, context,
+            "📋 *快捷菜单*\n\n使用下方按钮快速操作，或输入命令：\n/add <URL> - 添加下载任务",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+
+    async def handle_button_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """处理 Reply Keyboard 按钮点击"""
+        text = update.message.text
+        if text not in BUTTON_COMMANDS:
+            return
+
+        cmd = BUTTON_COMMANDS[text]
+        handler_map = {
+            "list": self.list_downloads,
+            "stats": self.global_stats,
+            "start": self.start_service,
+            "stop": self.stop_service,
+            "restart": self.restart_service,
+            "status": self.status,
+            "logs": self.view_logs,
+            "help": self.help_command,
+        }
+        if cmd in handler_map:
+            await handler_map[cmd](update, context)
 
     # === 下载管理命令 ===
 
@@ -670,6 +715,9 @@ class Aria2BotAPI:
 
 def build_handlers(api: Aria2BotAPI) -> list:
     """构建 Handler 列表"""
+    # 构建按钮文本过滤器
+    button_pattern = "^(" + "|".join(BUTTON_COMMANDS.keys()).replace("▶️", "▶️").replace("⏹", "⏹") + ")$"
+
     return [
         # 服务管理命令
         CommandHandler("install", api.install),
@@ -683,10 +731,13 @@ def build_handlers(api: Aria2BotAPI) -> list:
         CommandHandler("set_secret", api.set_secret),
         CommandHandler("reset_secret", api.reset_secret),
         CommandHandler("help", api.help_command),
+        CommandHandler("menu", api.menu_command),
         # 下载管理命令
         CommandHandler("add", api.add_download),
         CommandHandler("list", api.list_downloads),
         CommandHandler("stats", api.global_stats),
+        # Reply Keyboard 按钮文本处理
+        MessageHandler(filters.TEXT & filters.Regex(button_pattern), api.handle_button_text),
         # 种子文件处理
         MessageHandler(filters.Document.FileExtension("torrent"), api.handle_torrent),
         # Callback Query 处理

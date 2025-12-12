@@ -28,6 +28,7 @@ BOT_COMMANDS = [
     BotCommand("clear_logs", "清空日志"),
     BotCommand("set_secret", "设置自定义 RPC 密钥"),
     BotCommand("reset_secret", "重新生成随机 RPC 密钥"),
+    BotCommand("menu", "显示快捷菜单"),
     BotCommand("help", "显示帮助"),
 ]
 

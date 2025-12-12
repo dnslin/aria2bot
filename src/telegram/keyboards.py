@@ -1,7 +1,7 @@
 """Telegram 键盘构建工具"""
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 
 # 状态 emoji 映射
 STATUS_EMOJI = {
@@ -104,3 +104,14 @@ def build_after_add_keyboard(gid: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📥 查看列表", callback_data="list:menu"),
         ],
     ])
+
+
+def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
+    """构建主菜单 Reply Keyboard"""
+    keyboard = [
+        [KeyboardButton("📥 下载列表"), KeyboardButton("📊 统计")],
+        [KeyboardButton("▶️ 启动"), KeyboardButton("⏹ 停止")],
+        [KeyboardButton("🔄 重启"), KeyboardButton("📋 状态")],
+        [KeyboardButton("📜 日志"), KeyboardButton("❓ 帮助")],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
