@@ -19,11 +19,24 @@ class Aria2Config:
 
 
 @dataclass
+class OneDriveConfig:
+    """OneDrive 配置"""
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    tenant_id: str = "common"
+    auto_upload: bool = False
+    delete_after_upload: bool = False
+    remote_path: str = "/aria2bot"
+
+
+@dataclass
 class BotConfig:
     token: str = ""
     api_base_url: str = ""
     allowed_users: set[int] = field(default_factory=set)
     aria2: Aria2Config = field(default_factory=Aria2Config)
+    onedrive: OneDriveConfig = field(default_factory=OneDriveConfig)
 
     @classmethod
     def from_env(cls) -> "BotConfig":
@@ -62,9 +75,22 @@ class BotConfig:
             rpc_port=rpc_port,
             rpc_secret=os.environ.get("ARIA2_RPC_SECRET", ""),
         )
+
+        # 解析 OneDrive 配置
+        onedrive = OneDriveConfig(
+            enabled=os.environ.get("ONEDRIVE_ENABLED", "").lower() == "true",
+            client_id=os.environ.get("ONEDRIVE_CLIENT_ID", ""),
+            client_secret=os.environ.get("ONEDRIVE_CLIENT_SECRET", ""),
+            tenant_id=os.environ.get("ONEDRIVE_TENANT_ID", "common"),
+            auto_upload=os.environ.get("ONEDRIVE_AUTO_UPLOAD", "").lower() == "true",
+            delete_after_upload=os.environ.get("ONEDRIVE_DELETE_AFTER_UPLOAD", "").lower() == "true",
+            remote_path=os.environ.get("ONEDRIVE_REMOTE_PATH", "/aria2bot"),
+        )
+
         return cls(
             token=token,
             api_base_url=os.environ.get("TELEGRAM_API_BASE_URL", ""),
             allowed_users=allowed_users,
             aria2=aria2,
+            onedrive=onedrive,
         )

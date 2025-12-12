@@ -28,11 +28,14 @@ BOT_COMMANDS = [
     BotCommand("add", "添加下载任务"),
     BotCommand("list", "查看下载列表"),
     BotCommand("stats", "全局下载统计"),
+    BotCommand("cloud", "云存储管理"),
 ]
 
 
 async def post_init(application: Application) -> None:
     """应用初始化后设置命令菜单"""
+    logger = setup_logger()
+    logger.info("Setting bot commands...")
     await application.bot.set_my_commands(BOT_COMMANDS)
 
 
@@ -43,7 +46,7 @@ def create_app(config: BotConfig) -> Application:
         builder = builder.base_url(config.api_base_url).base_file_url(config.api_base_url + "/file")
     app = builder.build()
 
-    api = Aria2BotAPI(config.aria2, config.allowed_users)
+    api = Aria2BotAPI(config.aria2, config.allowed_users, config.onedrive)
     for handler in build_handlers(api):
         app.add_handler(handler)
 

@@ -12,3 +12,6 @@ ARIA2_DHT6 = ARIA2_CONFIG_DIR / "dht6.dat"
 DOWNLOAD_DIR = HOME / "downloads"
 SYSTEMD_USER_DIR = HOME / ".config" / "systemd" / "user"
 ARIA2_SERVICE = SYSTEMD_USER_DIR / "aria2.service"
+
+# 云存储相关路径
+CLOUD_TOKEN_DIR = ARIA2_CONFIG_DIR / "cloud_tokens"

@@ -31,3 +31,15 @@ class NotInstalledError(Aria2Error):
 
 class RpcError(Aria2Error):
     """RPC 调用失败"""
+
+
+class CloudStorageError(Aria2Error):
+    """云存储错误基类"""
+
+
+class CloudAuthError(CloudStorageError):
+    """云存储认证错误"""
+
+
+class CloudUploadError(CloudStorageError):
+    """云存储上传错误"""

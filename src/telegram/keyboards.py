@@ -115,3 +115,62 @@ def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton("📜 日志"), KeyboardButton("❓ 帮助")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
+
+
+# ==================== 云存储相关键盘 ====================
+
+
+def build_cloud_menu_keyboard() -> InlineKeyboardMarkup:
+    """构建云存储管理菜单"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 OneDrive 认证", callback_data="cloud:auth:onedrive")],
+        [
+            InlineKeyboardButton("📊 状态", callback_data="cloud:status"),
+            InlineKeyboardButton("⚙️ 设置", callback_data="cloud:settings"),
+        ],
+        [InlineKeyboardButton("🚪 登出", callback_data="cloud:logout")],
+    ])
+
+
+def build_upload_choice_keyboard(gid: str) -> InlineKeyboardMarkup:
+    """构建下载完成后的上传选择键盘"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("☁️ 上传到 OneDrive", callback_data=f"upload:onedrive:{gid}")],
+        [InlineKeyboardButton("🔙 返回列表", callback_data="list:menu")],
+    ])
+
+
+def build_cloud_settings_keyboard(auto_upload: bool, delete_after: bool) -> InlineKeyboardMarkup:
+    """构建云存储设置键盘"""
+    auto_text = "✅ 自动上传" if auto_upload else "❌ 自动上传"
+    delete_text = "✅ 上传后删除" if delete_after else "❌ 上传后删除"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(auto_text, callback_data="cloud:toggle:auto_upload")],
+        [InlineKeyboardButton(delete_text, callback_data="cloud:toggle:delete_after")],
+        [InlineKeyboardButton("🔙 返回", callback_data="cloud:menu")],
+    ])
+
+
+def build_detail_keyboard_with_upload(gid: str, status: str, show_upload: bool = False) -> InlineKeyboardMarkup:
+    """构建详情页面的操作按钮（含上传选项）"""
+    buttons = []
+
+    if status == "active":
+        buttons.append(InlineKeyboardButton("⏸ 暂停", callback_data=f"pause:{gid}"))
+    elif status in ("paused", "waiting"):
+        buttons.append(InlineKeyboardButton("▶️ 恢复", callback_data=f"resume:{gid}"))
+
+    buttons.append(InlineKeyboardButton("🗑 删除", callback_data=f"delete:{gid}"))
+
+    rows = [buttons]
+
+    # 任务完成时显示上传按钮
+    if show_upload and status == "complete":
+        rows.append([InlineKeyboardButton("☁️ 上传到云盘", callback_data=f"upload:onedrive:{gid}")])
+
+    rows.append([
+        InlineKeyboardButton("🔄 刷新", callback_data=f"refresh:{gid}"),
+        InlineKeyboardButton("🔙 返回列表", callback_data="list:menu"),
+    ])
+
+    return InlineKeyboardMarkup(rows)
