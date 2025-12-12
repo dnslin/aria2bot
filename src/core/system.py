@@ -75,9 +75,12 @@ def get_aria2_version() -> str | None:
         return None
 
     for cmd in candidates:
-        result = subprocess.run(
-            [str(cmd), "-v"], capture_output=True, text=True, check=False
-        )
+        try:
+            result = subprocess.run(
+                [str(cmd), "-v"], capture_output=True, text=True, check=False, timeout=5
+            )
+        except subprocess.TimeoutExpired:
+            continue
         if result.returncode != 0:
             continue
         for line in result.stdout.splitlines():

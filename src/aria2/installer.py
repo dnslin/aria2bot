@@ -197,6 +197,10 @@ class Aria2Installer:
         new_lines: list[str] = []
         for line in content.splitlines():
             stripped = line.lstrip()
+            # 跳过注释行，不进行替换
+            if stripped.startswith("#"):
+                new_lines.append(line)
+                continue
             replaced = False
             for key, value in replacements.items():
                 if stripped.startswith(key):
@@ -209,7 +213,10 @@ class Aria2Installer:
 
         try:
             ARIA2_CONF.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            # 设置配置文件权限为仅所有者可读写（包含敏感的 RPC 密钥）
+            ARIA2_CONF.chmod(0o600)
             ARIA2_SESSION.touch(exist_ok=True)
+            ARIA2_SESSION.chmod(0o600)
             self.config.download_dir.mkdir(parents=True, exist_ok=True)
             ARIA2_LOG.touch(exist_ok=True)
             logger.info(f"配置文件已保存: {ARIA2_CONF}")
@@ -276,8 +283,10 @@ class Aria2Installer:
         req = request.Request(url, headers={"User-Agent": "aria2-installer"})
         try:
             with request.urlopen(req, timeout=30) as resp:
-                if getattr(resp, "status", 200) >= 400:
-                    raise DownloadError(f"HTTP {resp.status} for {url}")
+                # 检查 HTTP 状态码（urllib 使用 code 属性）
+                status_code = getattr(resp, "code", 200)
+                if status_code >= 400:
+                    raise DownloadError(f"HTTP {status_code} for {url}")
                 return resp.read()
         except (error.HTTPError, error.URLError) as exc:
             raise DownloadError(f"Network error for {url}: {exc}") from exc
@@ -292,8 +301,16 @@ class Aria2Installer:
         with tarfile.open(archive_path, "r:gz") as tar:
             # 安全检查：验证所有成员路径，防止 Zip Slip 攻击
             for member in tar.getmembers():
+                # 检查符号链接
+                if member.issym() or member.islnk():
+                    raise DownloadError(f"不安全的 tar 成员（符号链接）: {member.name}")
+                # 检查路径遍历
                 if member.name.startswith('/') or '..' in member.name:
                     raise DownloadError(f"不安全的 tar 成员: {member.name}")
+                # 验证解压后的路径
+                member_path = (extract_dir / member.name).resolve()
+                if not str(member_path).startswith(str(extract_dir.resolve())):
+                    raise DownloadError(f"不安全的 tar 成员（路径遍历）: {member.name}")
             tar.extractall(extract_dir)
         for candidate in extract_dir.rglob("aria2c"):
             if candidate.is_file():

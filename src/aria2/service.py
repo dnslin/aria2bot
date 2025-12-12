@@ -48,9 +48,12 @@ class Aria2ServiceManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
         except FileNotFoundError as exc:
             raise ServiceError("systemctl command not found") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ServiceError(f"systemctl 命令超时: {args}") from exc
         except subprocess.CalledProcessError as exc:
             output = exc.stderr.strip() or exc.stdout.strip() or str(exc)
             raise ServiceError(output) from exc
@@ -102,15 +105,19 @@ class Aria2ServiceManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=10,
             )
             enabled_proc = subprocess.run(
                 ["systemctl", "--user", "is-enabled", "aria2"],
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=10,
             )
         except FileNotFoundError as exc:
             raise ServiceError("systemctl command not found") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ServiceError("获取服务状态超时") from exc
 
         running = active_proc.returncode == 0
         enabled = enabled_proc.returncode == 0
@@ -130,8 +137,9 @@ class Aria2ServiceManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=5,
             )
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             result = None
 
         if result and result.returncode == 0:
@@ -146,8 +154,9 @@ class Aria2ServiceManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=5,
             )
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             return None
 
         for line in ps_result.stdout.splitlines():

@@ -203,7 +203,7 @@ class Aria2BotAPI:
                         f"配置目录：{result.get('config_dir')}",
                         f"配置文件：{result.get('config')}",
                         f"RPC 端口：{rpc_port}",
-                        f"RPC 密钥：{rpc_secret}",
+                        f"RPC 密钥：{rpc_secret[:4]}****{rpc_secret[-4:] if len(rpc_secret) > 8 else '****'}",
                     ]
                 ),
             )
@@ -305,7 +305,7 @@ class Aria2BotAPI:
             f"- PID：`{info.get('pid') or 'N/A'}`\n"
             f"- 版本：`{version}`\n"
             f"- RPC 端口：`{rpc_port}`\n"
-            f"- RPC 密钥：`{rpc_secret}`"
+            f"- RPC 密钥：`{rpc_secret[:4]}****{rpc_secret[-4:] if len(rpc_secret) > 8 else '****'}`"
         )
         await self._reply(update, context, text, parse_mode="Markdown")
         logger.info(f"/status 命令执行成功 - {_get_user_info(update)}")
@@ -358,7 +358,7 @@ class Aria2BotAPI:
             self.service.update_rpc_secret(new_secret)
             self.config.rpc_secret = new_secret
             self.service.restart()
-            await self._reply(update, context, f"RPC 密钥已更新并重启服务 ✅\n新密钥: `{new_secret}`", parse_mode="Markdown")
+            await self._reply(update, context, f"RPC 密钥已更新并重启服务 ✅\n新密钥: `{new_secret[:4]}****{new_secret[-4:]}`", parse_mode="Markdown")
             logger.info(f"/set_secret 命令执行成功 - {_get_user_info(update)}")
         except ConfigError as exc:
             logger.error(f"/set_secret 命令执行失败: {exc} - {_get_user_info(update)}")
@@ -378,7 +378,7 @@ class Aria2BotAPI:
             self.service.update_rpc_secret(new_secret)
             self.config.rpc_secret = new_secret
             self.service.restart()
-            await self._reply(update, context, f"RPC 密钥已重新生成并重启服务 ✅\n新密钥: `{new_secret}`", parse_mode="Markdown")
+            await self._reply(update, context, f"RPC 密钥已重新生成并重启服务 ✅\n新密钥: `{new_secret[:4]}****{new_secret[-4:]}`", parse_mode="Markdown")
             logger.info(f"/reset_secret 命令执行成功 - {_get_user_info(update)}")
         except ConfigError as exc:
             logger.error(f"/reset_secret 命令执行失败: {exc} - {_get_user_info(update)}")
@@ -452,7 +452,7 @@ class Aria2BotAPI:
             await self._reply(update, context, "✅ OneDrive 已认证")
             return
 
-        url, state = await client.get_auth_url()
+        url, flow = await client.get_auth_url()
         user_id = update.effective_user.id
 
         auth_message = await self._reply(
@@ -464,7 +464,7 @@ class Aria2BotAPI:
             f"[点击认证]({url})",
             parse_mode="Markdown"
         )
-        self._pending_auth[user_id] = {"state": state, "message": auth_message}
+        self._pending_auth[user_id] = {"flow": flow, "message": auth_message}
 
     async def handle_auth_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """处理用户发送的认证回调 URL"""
@@ -482,7 +482,7 @@ class Aria2BotAPI:
 
         user_message = update.message  # 保存用户消息引用
         pending = self._pending_auth[user_id]
-        flow = pending["state"]
+        flow = pending["flow"]
         auth_message = pending.get("message")  # 认证指引消息
 
         if await client.authenticate_with_code(text, flow=flow):
@@ -583,7 +583,7 @@ class Aria2BotAPI:
         """后台执行上传任务"""
         import shutil
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # 进度回调函数
         async def update_progress(progress: UploadProgress):
@@ -693,7 +693,7 @@ class Aria2BotAPI:
             logger.error(f"自动上传失败：发送消息失败 GID={gid}: {e}")
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # 进度回调函数
         async def update_progress(progress):
@@ -1040,10 +1040,10 @@ class Aria2BotAPI:
         except RpcError:
             pass
 
-        # 如果需要删除文件
+        # 如果需要删除文件（使用 asyncio.to_thread 避免阻塞事件循环）
         file_deleted = False
         if delete_file == "1" and task:
-            file_deleted = rpc.delete_files(task)
+            file_deleted = await asyncio.to_thread(rpc.delete_files, task)
 
         msg = f"🗑️ 任务已删除\n🆔 GID: `{gid}`"
         if delete_file == "1":

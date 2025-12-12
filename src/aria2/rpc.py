@@ -86,9 +86,14 @@ class Aria2RpcClient:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(self.url, json=payload)
+                resp.raise_for_status()
                 data = resp.json()
         except httpx.ConnectError:
             raise RpcError("aria2 服务可能未运行，请先使用 /start 命令启动服务") from None
+        except httpx.TimeoutException:
+            raise RpcError("RPC 请求超时，aria2 服务响应缓慢") from None
+        except httpx.HTTPStatusError as e:
+            raise RpcError(f"RPC 请求失败，HTTP 状态码: {e.response.status_code}") from e
         except httpx.RequestError as e:
             raise RpcError(f"RPC 请求失败: {e}") from e
         except json.JSONDecodeError as e:
@@ -184,7 +189,9 @@ class Aria2RpcClient:
             # 安全检查：验证路径在下载目录内，防止路径遍历攻击
             from src.core.constants import DOWNLOAD_DIR
             download_dir = DOWNLOAD_DIR.resolve()
-            if not str(file_path).startswith(str(download_dir) + "/"):
+            try:
+                file_path.relative_to(download_dir)
+            except ValueError:
                 logger.error(f"路径遍历尝试被阻止: {file_path}")
                 return False
             if file_path.exists():

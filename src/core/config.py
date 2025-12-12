@@ -20,10 +20,9 @@ class Aria2Config:
 
 @dataclass
 class OneDriveConfig:
-    """OneDrive 配置"""
+    """OneDrive 配置（使用公共客户端认证，不需要 client_secret）"""
     enabled: bool = False
     client_id: str = ""
-    client_secret: str = ""
     tenant_id: str = "common"
     auto_upload: bool = False
     delete_after_upload: bool = False
@@ -76,11 +75,10 @@ class BotConfig:
             rpc_secret=os.environ.get("ARIA2_RPC_SECRET", ""),
         )
 
-        # 解析 OneDrive 配置
+        # 解析 OneDrive 配置（使用公共客户端认证，不需要 client_secret）
         onedrive = OneDriveConfig(
             enabled=os.environ.get("ONEDRIVE_ENABLED", "").lower() == "true",
             client_id=os.environ.get("ONEDRIVE_CLIENT_ID", ""),
-            client_secret=os.environ.get("ONEDRIVE_CLIENT_SECRET", ""),
             tenant_id=os.environ.get("ONEDRIVE_TENANT_ID", "common"),
             auto_upload=os.environ.get("ONEDRIVE_AUTO_UPLOAD", "").lower() == "true",
             delete_after_upload=os.environ.get("ONEDRIVE_DELETE_AFTER_UPLOAD", "").lower() == "true",

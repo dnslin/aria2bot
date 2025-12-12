@@ -99,18 +99,22 @@ class OneDriveClient(CloudStorageBase):
         account = self._get_account()
         return account.is_authenticated
 
-    async def get_auth_url(self) -> tuple[str, str]:
-        """获取认证 URL"""
+    async def get_auth_url(self) -> tuple[str, dict]:
+        """获取认证 URL
+
+        返回:
+            tuple[str, dict]: (认证 URL, flow 字典用于后续认证)
+        """
         account = self._get_account()
         # MSAL 保留的 scope 不能传入，会自动处理
         reserved = {"openid", "offline_access", "profile"}
         scopes = [s for s in self.SCOPES if s not in reserved]
         redirect_uri = "https://login.microsoftonline.com/common/oauth2/nativeclient"
-        url, state = account.con.get_authorization_url(
+        url, flow = account.con.get_authorization_url(
             requested_scopes=scopes,
             redirect_uri=redirect_uri
         )
-        return url, state
+        return url, flow
 
     async def authenticate_with_code(self, callback_url: str, flow: dict | None = None) -> bool:
         """使用回调 URL 完成认证"""
