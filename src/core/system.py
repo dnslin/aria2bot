@@ -57,6 +57,45 @@ def generate_rpc_secret() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(20))
 
 
+def detect_service_mode() -> str:
+    """检测应使用的服务管理模式
+
+    返回: 'systemd' 或 'subprocess'
+
+    可通过环境变量 ARIA2_SERVICE_MODE 强制指定模式（用于测试）
+    """
+    import os
+    # 允许通过环境变量强制指定模式
+    forced_mode = os.environ.get("ARIA2_SERVICE_MODE", "").lower()
+    if forced_mode in ("systemd", "subprocess"):
+        return forced_mode
+
+    # 1. 检查 systemctl 命令是否存在
+    if shutil.which("systemctl") is None:
+        return "subprocess"
+
+    # 2. 检查 systemd 是否真正运行（Docker 容器中可能有命令但无服务）
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-system-running"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        # running/degraded/starting/initializing 都表示 systemd 可用
+        status = result.stdout.strip()
+        if status in ("running", "degraded", "starting", "initializing"):
+            return "systemd"
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # 3. 备选检查：检查 /run/systemd/system 目录
+    if Path("/run/systemd/system").exists():
+        return "systemd"
+
+    return "subprocess"
+
+
 def is_aria2_installed() -> bool:
     """检查 aria2c 是否已安装"""
     if ARIA2_BIN.exists():

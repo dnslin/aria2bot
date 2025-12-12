@@ -1280,7 +1280,6 @@ class Aria2BotAPI:
         gid = parts[2]
 
         if provider == "onedrive":
-            await query.edit_message_text("☁️ 正在准备上传...")
             await self.upload_to_cloud(update, context, gid)
 
 

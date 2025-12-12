@@ -6,7 +6,8 @@ import sys
 from telegram import Bot, BotCommand
 from telegram.ext import Application
 
-from src.core import BotConfig
+from src.core import BotConfig, is_aria2_installed
+from src.aria2.service import Aria2ServiceManager, get_service_mode
 from src.telegram.handlers import Aria2BotAPI, build_handlers
 from src.utils import setup_logger
 
@@ -57,6 +58,27 @@ def create_app(config: BotConfig) -> Application:
     return app
 
 
+def _auto_start_aria2() -> None:
+    """子进程模式下自动启动 aria2（如果已安装）"""
+    logger = setup_logger()
+    mode = get_service_mode()
+
+    if mode != "subprocess":
+        logger.info(f"服务管理模式: {mode}，跳过自动启动")
+        return
+
+    if not is_aria2_installed():
+        logger.info("aria2 未安装，跳过自动启动")
+        return
+
+    try:
+        service = Aria2ServiceManager()
+        service.start()
+        logger.info("aria2 子进程已自动启动")
+    except Exception as e:
+        logger.warning(f"自动启动 aria2 失败: {e}")
+
+
 def run() -> None:
     """加载配置并启动 bot"""
     import asyncio
@@ -67,6 +89,9 @@ def run() -> None:
     if not config.token:
         logger.error("Please set TELEGRAM_BOT_TOKEN in .env or environment")
         sys.exit(1)
+
+    # 子进程模式下自动启动 aria2
+    _auto_start_aria2()
 
     app = create_app(config)
     logger.info("Bot starting...")

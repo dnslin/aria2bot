@@ -26,6 +26,7 @@ from src.core.config import Aria2Config, BotConfig
 from src.core.system import (
     detect_os,
     detect_arch,
+    detect_service_mode,
     generate_rpc_secret,
     is_aria2_installed,
     get_aria2_version,
@@ -55,6 +56,7 @@ __all__ = [
     "BotConfig",
     "detect_os",
     "detect_arch",
+    "detect_service_mode",
     "generate_rpc_secret",
     "is_aria2_installed",
     "get_aria2_version",
