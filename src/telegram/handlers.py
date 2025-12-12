@@ -1,6 +1,8 @@
 """Telegram bot command handlers."""
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
@@ -53,6 +55,28 @@ def _get_user_info(update: Update) -> str:
     if user:
         return f"用户ID={user.id}, 用户名={user.username or 'N/A'}"
     return "未知用户"
+
+
+def _validate_download_url(url: str) -> tuple[bool, str]:
+    """验证下载 URL 的有效性，防止恶意输入"""
+    # 检查 URL 长度
+    if len(url) > 2048:
+        return False, "URL 过长（最大 2048 字符）"
+
+    # 磁力链接直接通过
+    if url.startswith("magnet:"):
+        return True, ""
+
+    # 验证 HTTP/HTTPS URL
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False, f"不支持的协议: {parsed.scheme or '无'}，仅支持 HTTP/HTTPS/磁力链接"
+        if not parsed.netloc:
+            return False, "无效的 URL 格式"
+        return True, ""
+    except Exception:
+        return False, "URL 解析失败"
 
 
 import asyncio
@@ -400,6 +424,13 @@ class Aria2BotAPI:
             return
 
         url = context.args[0]
+
+        # 验证 URL 格式
+        is_valid, error_msg = _validate_download_url(url)
+        if not is_valid:
+            await self._reply(update, context, f"❌ URL 无效: {error_msg}")
+            return
+
         try:
             rpc = self._get_rpc_client()
             gid = await rpc.add_uri(url)
@@ -488,7 +519,19 @@ class Aria2BotAPI:
             return
 
         parts = data.split(":")
+        if not parts:
+            await query.edit_message_text("❌ 无效操作")
+            return
         action = parts[0]
+
+        # 安全检查：验证回调数据格式，防止索引越界
+        required_parts = {
+            "pause": 2, "resume": 2, "delete": 2, "detail": 2, "refresh": 2,
+            "confirm_del": 3, "cancel_del": 3,
+        }
+        if action in required_parts and len(parts) < required_parts[action]:
+            await query.edit_message_text("❌ 无效操作")
+            return
 
         # 点击非详情相关按钮时，停止该消息的自动刷新
         if action not in ("detail", "refresh", "pause", "resume"):
@@ -652,10 +695,12 @@ class Aria2BotAPI:
         await query.edit_message_text(msg, parse_mode="Markdown")
 
     def _stop_auto_refresh(self, key: str) -> None:
-        """停止自动刷新任务"""
+        """停止自动刷新任务并等待清理"""
         if key in self._auto_refresh_tasks:
-            self._auto_refresh_tasks[key].cancel()
-            del self._auto_refresh_tasks[key]
+            task = self._auto_refresh_tasks.pop(key)
+            task.cancel()
+            # 注意：这里不等待任务完成，因为是同步方法
+            # 任务会在 finally 块中自行清理
 
     async def _handle_detail_callback(self, query, rpc: Aria2RpcClient, gid: str) -> None:
         """处理详情回调，启动自动刷新"""
@@ -702,7 +747,8 @@ class Aria2BotAPI:
                     try:
                         await message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
                         last_text = text
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"编辑消息失败 (GID={gid}): {e}")
                         break
 
                 # 任务完成或出错时停止刷新

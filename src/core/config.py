@@ -29,21 +29,37 @@ class BotConfig:
     def from_env(cls) -> "BotConfig":
         """从环境变量加载配置"""
         from dotenv import load_dotenv
+        from src.core.exceptions import ConfigError
         load_dotenv()
 
-        token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        # 验证必需的 Token
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        if not token:
+            raise ConfigError("TELEGRAM_BOT_TOKEN 环境变量未设置")
+
+        # 安全解析 RPC 端口
+        port_str = os.environ.get("ARIA2_RPC_PORT", "6800")
+        try:
+            rpc_port = int(port_str)
+            if not (1 <= rpc_port <= 65535):
+                raise ValueError("端口必须在 1-65535 范围内")
+        except ValueError as e:
+            raise ConfigError(f"无效的 ARIA2_RPC_PORT: {e}") from e
 
         # 解析允许的用户 ID 列表
         allowed_users_str = os.environ.get("ALLOWED_USERS", "")
         allowed_users = set()
         if allowed_users_str:
-            allowed_users = {
-                int(uid.strip()) for uid in allowed_users_str.split(",")
-                if uid.strip().isdigit()
-            }
+            for uid in allowed_users_str.split(","):
+                uid = uid.strip()
+                if uid.isdigit():
+                    user_id = int(uid)
+                    # 验证用户 ID 在合理范围内
+                    if 0 < user_id < 2**63:
+                        allowed_users.add(user_id)
 
         aria2 = Aria2Config(
-            rpc_port=int(os.environ.get("ARIA2_RPC_PORT", "6800")),
+            rpc_port=rpc_port,
             rpc_secret=os.environ.get("ARIA2_RPC_SECRET", ""),
         )
         return cls(

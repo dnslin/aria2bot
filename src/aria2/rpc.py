@@ -180,7 +180,13 @@ class Aria2RpcClient:
         if not task.dir or not task.name:
             return False
         try:
-            file_path = Path(task.dir) / task.name
+            file_path = (Path(task.dir) / task.name).resolve()
+            # 安全检查：验证路径在下载目录内，防止路径遍历攻击
+            from src.core.constants import DOWNLOAD_DIR
+            download_dir = DOWNLOAD_DIR.resolve()
+            if not str(file_path).startswith(str(download_dir) + "/"):
+                logger.error(f"路径遍历尝试被阻止: {file_path}")
+                return False
             if file_path.exists():
                 if file_path.is_dir():
                     import shutil

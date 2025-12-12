@@ -50,6 +50,15 @@ class Aria2Installer:
         self.arch = detect_arch()
         self._executor = ThreadPoolExecutor(max_workers=4)
 
+    def __del__(self):
+        """确保线程池被关闭，防止资源泄漏"""
+        if hasattr(self, '_executor'):
+            self._executor.shutdown(wait=False)
+
+    def close(self):
+        """显式关闭资源"""
+        self._executor.shutdown(wait=True)
+
     async def get_latest_version(self) -> str:
         """从 GitHub API 获取最新版本号"""
         logger.info("正在获取 aria2 最新版本...")
@@ -281,6 +290,10 @@ class Aria2Installer:
     @staticmethod
     def _extract_binary(archive_path: Path, extract_dir: Path) -> Path:
         with tarfile.open(archive_path, "r:gz") as tar:
+            # 安全检查：验证所有成员路径，防止 Zip Slip 攻击
+            for member in tar.getmembers():
+                if member.name.startswith('/') or '..' in member.name:
+                    raise DownloadError(f"不安全的 tar 成员: {member.name}")
             tar.extractall(extract_dir)
         for candidate in extract_dir.rglob("aria2c"):
             if candidate.is_file():
