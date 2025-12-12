@@ -13,11 +13,6 @@ from src.utils import setup_logger
 
 # Bot 命令列表，用于 Telegram 命令自动补全
 BOT_COMMANDS = [
-    # 下载管理
-    BotCommand("add", "添加下载任务"),
-    BotCommand("list", "查看下载列表"),
-    BotCommand("stats", "全局下载统计"),
-    # 服务管理
     BotCommand("install", "安装 aria2"),
     BotCommand("uninstall", "卸载 aria2"),
     BotCommand("start", "启动 aria2 服务"),
@@ -30,6 +25,9 @@ BOT_COMMANDS = [
     BotCommand("reset_secret", "重新生成随机 RPC 密钥"),
     BotCommand("menu", "显示快捷菜单"),
     BotCommand("help", "显示帮助"),
+    BotCommand("add", "添加下载任务"),
+    BotCommand("list", "查看下载列表"),
+    BotCommand("stats", "全局下载统计"),
 ]
 
 
