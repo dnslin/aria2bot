@@ -45,7 +45,7 @@ def create_app(config: BotConfig) -> Application:
         builder = builder.base_url(config.api_base_url).base_file_url(config.api_base_url + "/file")
     app = builder.build()
 
-    api = Aria2BotAPI(config.aria2)
+    api = Aria2BotAPI(config.aria2, config.allowed_users)
     for handler in build_handlers(api):
         app.add_handler(handler)
 

@@ -56,14 +56,30 @@ def _get_user_info(update: Update) -> str:
 
 
 import asyncio
+from functools import wraps
 
 class Aria2BotAPI:
-    def __init__(self, config: Aria2Config | None = None):
+    def __init__(self, config: Aria2Config | None = None, allowed_users: set[int] | None = None):
         self.config = config or Aria2Config()
+        self.allowed_users = allowed_users or set()
         self.installer = Aria2Installer(self.config)
         self.service = Aria2ServiceManager()
         self._rpc: Aria2RpcClient | None = None
         self._auto_refresh_tasks: dict[str, asyncio.Task] = {}  # chat_id:msg_id -> task
+
+    async def _check_permission(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """检查用户权限，返回 True 表示有权限"""
+        # 未配置白名单时拒绝所有用户
+        if not self.allowed_users:
+            logger.warning(f"未配置 ALLOWED_USERS，拒绝访问 - {_get_user_info(update)}")
+            await self._reply(update, context, "⚠️ Bot 未配置允许的用户，请联系管理员")
+            return False
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id and user_id in self.allowed_users:
+            return True
+        logger.warning(f"未授权访问 - {_get_user_info(update)}")
+        await self._reply(update, context, "🚫 您没有权限使用此 Bot")
+        return False
 
     def _get_rpc_client(self) -> Aria2RpcClient:
         """获取或创建 RPC 客户端"""
@@ -715,31 +731,41 @@ class Aria2BotAPI:
 
 def build_handlers(api: Aria2BotAPI) -> list:
     """构建 Handler 列表"""
+
+    def wrap_with_permission(handler_func):
+        """包装处理函数，添加权限检查"""
+        @wraps(handler_func)
+        async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            if not await api._check_permission(update, context):
+                return
+            return await handler_func(update, context)
+        return wrapped
+
     # 构建按钮文本过滤器
     button_pattern = "^(" + "|".join(BUTTON_COMMANDS.keys()).replace("▶️", "▶️").replace("⏹", "⏹") + ")$"
 
     return [
         # 服务管理命令
-        CommandHandler("install", api.install),
-        CommandHandler("uninstall", api.uninstall),
-        CommandHandler("start", api.start_service),
-        CommandHandler("stop", api.stop_service),
-        CommandHandler("restart", api.restart_service),
-        CommandHandler("status", api.status),
-        CommandHandler("logs", api.view_logs),
-        CommandHandler("clear_logs", api.clear_logs),
-        CommandHandler("set_secret", api.set_secret),
-        CommandHandler("reset_secret", api.reset_secret),
-        CommandHandler("help", api.help_command),
-        CommandHandler("menu", api.menu_command),
+        CommandHandler("install", wrap_with_permission(api.install)),
+        CommandHandler("uninstall", wrap_with_permission(api.uninstall)),
+        CommandHandler("start", wrap_with_permission(api.start_service)),
+        CommandHandler("stop", wrap_with_permission(api.stop_service)),
+        CommandHandler("restart", wrap_with_permission(api.restart_service)),
+        CommandHandler("status", wrap_with_permission(api.status)),
+        CommandHandler("logs", wrap_with_permission(api.view_logs)),
+        CommandHandler("clear_logs", wrap_with_permission(api.clear_logs)),
+        CommandHandler("set_secret", wrap_with_permission(api.set_secret)),
+        CommandHandler("reset_secret", wrap_with_permission(api.reset_secret)),
+        CommandHandler("help", wrap_with_permission(api.help_command)),
+        CommandHandler("menu", wrap_with_permission(api.menu_command)),
         # 下载管理命令
-        CommandHandler("add", api.add_download),
-        CommandHandler("list", api.list_downloads),
-        CommandHandler("stats", api.global_stats),
+        CommandHandler("add", wrap_with_permission(api.add_download)),
+        CommandHandler("list", wrap_with_permission(api.list_downloads)),
+        CommandHandler("stats", wrap_with_permission(api.global_stats)),
         # Reply Keyboard 按钮文本处理
-        MessageHandler(filters.TEXT & filters.Regex(button_pattern), api.handle_button_text),
+        MessageHandler(filters.TEXT & filters.Regex(button_pattern), wrap_with_permission(api.handle_button_text)),
         # 种子文件处理
-        MessageHandler(filters.Document.FileExtension("torrent"), api.handle_torrent),
+        MessageHandler(filters.Document.FileExtension("torrent"), wrap_with_permission(api.handle_torrent)),
         # Callback Query 处理
-        CallbackQueryHandler(api.handle_callback),
+        CallbackQueryHandler(wrap_with_permission(api.handle_callback)),
     ]

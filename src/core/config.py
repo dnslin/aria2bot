@@ -22,6 +22,7 @@ class Aria2Config:
 class BotConfig:
     token: str = ""
     api_base_url: str = ""
+    allowed_users: set[int] = field(default_factory=set)
     aria2: Aria2Config = field(default_factory=Aria2Config)
 
     @classmethod
@@ -31,6 +32,16 @@ class BotConfig:
         load_dotenv()
 
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+
+        # 解析允许的用户 ID 列表
+        allowed_users_str = os.environ.get("ALLOWED_USERS", "")
+        allowed_users = set()
+        if allowed_users_str:
+            allowed_users = {
+                int(uid.strip()) for uid in allowed_users_str.split(",")
+                if uid.strip().isdigit()
+            }
+
         aria2 = Aria2Config(
             rpc_port=int(os.environ.get("ARIA2_RPC_PORT", "6800")),
             rpc_secret=os.environ.get("ARIA2_RPC_SECRET", ""),
@@ -38,5 +49,6 @@ class BotConfig:
         return cls(
             token=token,
             api_base_url=os.environ.get("TELEGRAM_API_BASE_URL", ""),
+            allowed_users=allowed_users,
             aria2=aria2,
         )
