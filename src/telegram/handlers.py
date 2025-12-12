@@ -23,6 +23,7 @@ from src.core import (
     DOWNLOAD_DIR,
 )
 from src.core.config import OneDriveConfig
+from src.cloud.base import UploadProgress, UploadStatus
 from src.aria2 import Aria2Installer, Aria2ServiceManager
 from src.aria2.rpc import Aria2RpcClient, DownloadTask, _format_size
 from src.telegram.keyboards import (
@@ -536,9 +537,8 @@ class Aria2BotAPI:
         await self._reply(update, context, text, parse_mode="Markdown")
 
     async def upload_to_cloud(self, update: Update, context: ContextTypes.DEFAULT_TYPE, gid: str) -> None:
-        """上传文件到云存储"""
+        """上传文件到云存储（启动后台任务，不阻塞其他命令）"""
         from pathlib import Path
-        import shutil
 
         logger.info(f"收到上传请求 GID={gid} - {_get_user_info(update)}")
         client = self._get_onedrive_client()
@@ -572,24 +572,65 @@ class Aria2BotAPI:
 
         msg = await self._reply(update, context, f"☁️ 正在上传: {task.name}\n⏳ 请稍候...")
 
-        success = await client.upload_file(local_path, remote_path)
+        # 启动后台上传任务，不阻塞其他命令
+        asyncio.create_task(self._do_upload_to_cloud(
+            client, local_path, remote_path, task.name, msg, gid, _get_user_info(update)
+        ))
 
-        if success:
-            result_text = f"✅ 上传成功: {task.name}"
-            if self._onedrive_config and self._onedrive_config.delete_after_upload:
+    async def _do_upload_to_cloud(
+        self, client, local_path, remote_path: str, task_name: str, msg, gid: str, user_info: str
+    ) -> None:
+        """后台执行上传任务"""
+        import shutil
+
+        loop = asyncio.get_event_loop()
+
+        # 进度回调函数
+        async def update_progress(progress: UploadProgress):
+            """更新上传进度消息"""
+            if progress.status == UploadStatus.UPLOADING and progress.total_size > 0:
+                percent = progress.progress
+                uploaded_mb = progress.uploaded_size / (1024 * 1024)
+                total_mb = progress.total_size / (1024 * 1024)
+                progress_text = (
+                    f"☁️ 正在上传: {task_name}\n"
+                    f"📤 {percent:.1f}% ({uploaded_mb:.1f}MB / {total_mb:.1f}MB)"
+                )
                 try:
-                    if local_path.is_dir():
-                        shutil.rmtree(local_path)
-                    else:
-                        local_path.unlink()
-                    result_text += "\n🗑️ 本地文件已删除"
-                except Exception as e:
-                    result_text += f"\n⚠️ 删除本地文件失败: {e}"
-            await msg.edit_text(result_text)
-            logger.info(f"上传成功 GID={gid} - {_get_user_info(update)}")
-        else:
-            await msg.edit_text(f"❌ 上传失败: {task.name}")
-            logger.error(f"上传失败 GID={gid} - {_get_user_info(update)}")
+                    await msg.edit_text(progress_text)
+                except Exception:
+                    pass  # 忽略消息更新失败（如内容未变化）
+
+        def sync_progress_callback(progress: UploadProgress):
+            """同步回调，将异步更新调度到事件循环"""
+            if progress.status == UploadStatus.UPLOADING:
+                asyncio.run_coroutine_threadsafe(update_progress(progress), loop)
+
+        try:
+            success = await client.upload_file(local_path, remote_path, progress_callback=sync_progress_callback)
+
+            if success:
+                result_text = f"✅ 上传成功: {task_name}"
+                if self._onedrive_config and self._onedrive_config.delete_after_upload:
+                    try:
+                        if local_path.is_dir():
+                            shutil.rmtree(local_path)
+                        else:
+                            local_path.unlink()
+                        result_text += "\n🗑️ 本地文件已删除"
+                    except Exception as e:
+                        result_text += f"\n⚠️ 删除本地文件失败: {e}"
+                await msg.edit_text(result_text)
+                logger.info(f"上传成功 GID={gid} - {user_info}")
+            else:
+                await msg.edit_text(f"❌ 上传失败: {task_name}")
+                logger.error(f"上传失败 GID={gid} - {user_info}")
+        except Exception as e:
+            logger.error(f"上传异常 GID={gid}: {e} - {user_info}")
+            try:
+                await msg.edit_text(f"❌ 上传失败: {task_name}\n错误: {e}")
+            except Exception:
+                pass
 
     async def handle_button_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """处理 Reply Keyboard 按钮点击"""
