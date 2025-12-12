@@ -17,6 +17,8 @@ from src.core import (
     ARIA2_BIN,
     ARIA2_CONFIG_DIR,
     ARIA2_CONF,
+    ARIA2_DHT,
+    ARIA2_DHT6,
     ARIA2_LOG,
     ARIA2_SESSION,
     Aria2Config,
@@ -175,6 +177,10 @@ class Aria2Installer:
             "rpc-secret=": rpc_secret,
             "max-concurrent-downloads=": str(self.config.max_concurrent_downloads),
             "max-connection-per-server=": str(self.config.max_connection_per_server),
+            "dht-file-path=": str(ARIA2_DHT),
+            "dht-file-path6=": str(ARIA2_DHT6),
+            "input-file=": str(ARIA2_SESSION),
+            "save-session=": str(ARIA2_SESSION),
         }
 
         logger.info(f"配置参数: RPC端口={self.config.rpc_port}, 下载目录={self.config.download_dir}")
