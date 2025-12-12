@@ -67,7 +67,7 @@ class Aria2Installer:
     async def download_binary(self, version: str | None = None) -> Path:
         """下载并解压 aria2 静态二进制到 ~/.local/bin/"""
         resolved_version = version or await self.get_latest_version()
-        version_name = resolved_version.lstrip("v")
+        version_name = resolved_version.lstrip("v").split("_")[0]
         archive_name = f"aria2-{version_name}-static-linux-{self.arch}.tar.gz"
         download_url = (
             f"https://github.com/P3TERX/Aria2-Pro-Core/releases/download/"
