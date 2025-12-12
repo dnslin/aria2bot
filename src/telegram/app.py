@@ -48,6 +48,8 @@ def create_app(config: BotConfig) -> Application:
 
 def run() -> None:
     """加载配置并启动 bot"""
+    import asyncio
+
     logger = setup_logger()
     config = BotConfig.from_env()
 
@@ -57,4 +59,11 @@ def run() -> None:
 
     app = create_app(config)
     logger.info("Bot starting...")
-    app.run_polling()
+
+    async def main():
+        async with app:
+            await app.start()
+            await app.updater.start_polling()
+            await asyncio.Event().wait()
+
+    asyncio.run(main())

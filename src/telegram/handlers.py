@@ -75,6 +75,9 @@ class Aria2BotAPI:
 
     async def install(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info(f"收到 /install 命令 - {_get_user_info(update)}")
+        if is_aria2_installed():
+            await self._reply(update, context, "aria2 已安装，无需重复安装。如需重新安装，请先运行 /uninstall")
+            return
         await self._reply(update, context, "正在安装 aria2，处理中，请稍候...")
         try:
             result = await self.installer.install()
@@ -106,6 +109,9 @@ class Aria2BotAPI:
 
     async def uninstall(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info(f"收到 /uninstall 命令 - {_get_user_info(update)}")
+        if not is_aria2_installed():
+            await self._reply(update, context, "aria2 未安装，无需卸载")
+            return
         await self._reply(update, context, "正在卸载 aria2，处理中，请稍候...")
         try:
             try:
