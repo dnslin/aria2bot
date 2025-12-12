@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import sys
 
-from telegram import BotCommand
+from telegram import Bot, BotCommand
 from telegram.ext import Application
 
 from src.core import BotConfig
 from src.telegram.handlers import Aria2BotAPI, build_handlers
 from src.utils import setup_logger
 
+# 全局 bot 实例，用于自动上传等功能发送消息
+_bot_instance: Bot | None = None
 
 # Bot 命令列表，用于 Telegram 命令自动补全
 BOT_COMMANDS = [
@@ -34,9 +36,11 @@ BOT_COMMANDS = [
 
 async def post_init(application: Application) -> None:
     """应用初始化后设置命令菜单"""
+    global _bot_instance
     logger = setup_logger()
     logger.info("Setting bot commands...")
     await application.bot.set_my_commands(BOT_COMMANDS)
+    _bot_instance = application.bot
 
 
 def create_app(config: BotConfig) -> Application:
