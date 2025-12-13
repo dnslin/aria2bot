@@ -1386,6 +1386,7 @@ class Aria2BotAPI:
 
     async def _upload_to_channel_manual(self, query, update: Update, context: ContextTypes.DEFAULT_TYPE, gid: str) -> None:
         """手动上传到频道"""
+        import shutil
         from pathlib import Path
 
         client = self._get_telegram_channel_client(context.bot)
@@ -1419,7 +1420,17 @@ class Aria2BotAPI:
         await query.edit_message_text(f"📢 正在发送到频道: {task.name}")
         success, result = await client.upload_file(local_path)
         if success:
-            await query.edit_message_text(f"✅ 已发送到频道: {task.name}")
+            result_text = f"✅ 已发送到频道: {task.name}"
+            if self._telegram_channel_config and self._telegram_channel_config.delete_after_upload:
+                try:
+                    if local_path.is_dir():
+                        shutil.rmtree(local_path)
+                    else:
+                        local_path.unlink()
+                    result_text += "\n🗑️ 本地文件已删除"
+                except Exception as e:
+                    result_text += f"\n⚠️ 删除本地文件失败: {e}"
+            await query.edit_message_text(result_text)
         else:
             await query.edit_message_text(f"❌ 发送失败: {result}")
 
