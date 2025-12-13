@@ -8,10 +8,10 @@ You must communicate in Chinese and logs and comments must also be in Chinese, i
 
 ```bash
 # Install dependencies
-pip install -e .
+uv pip install -e .
 
 # Run the bot
-python main.py
+uv run main.py
 # or after install:
 aria2bot
 ```

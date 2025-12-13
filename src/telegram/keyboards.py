@@ -151,7 +151,7 @@ def build_cloud_settings_keyboard(auto_upload: bool, delete_after: bool) -> Inli
     ])
 
 
-def build_detail_keyboard_with_upload(gid: str, status: str, show_upload: bool = False) -> InlineKeyboardMarkup:
+def build_detail_keyboard_with_upload(gid: str, status: str, show_onedrive: bool = False, show_channel: bool = False) -> InlineKeyboardMarkup:
     """构建详情页面的操作按钮（含上传选项）"""
     buttons = []
 
@@ -165,8 +165,14 @@ def build_detail_keyboard_with_upload(gid: str, status: str, show_upload: bool =
     rows = [buttons]
 
     # 任务完成时显示上传按钮
-    if show_upload and status == "complete":
-        rows.append([InlineKeyboardButton("☁️ 上传到云盘", callback_data=f"upload:onedrive:{gid}")])
+    if status == "complete":
+        upload_buttons = []
+        if show_onedrive:
+            upload_buttons.append(InlineKeyboardButton("☁️ OneDrive", callback_data=f"upload:onedrive:{gid}"))
+        if show_channel:
+            upload_buttons.append(InlineKeyboardButton("📢 频道", callback_data=f"upload:telegram:{gid}"))
+        if upload_buttons:
+            rows.append(upload_buttons)
 
     rows.append([
         InlineKeyboardButton("🔄 刷新", callback_data=f"refresh:{gid}"),

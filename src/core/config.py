@@ -30,12 +30,22 @@ class OneDriveConfig:
 
 
 @dataclass
+class TelegramChannelConfig:
+    """Telegram 频道存储配置"""
+    enabled: bool = False
+    channel_id: str = ""  # 频道 ID 或 @username
+    auto_upload: bool = False
+    delete_after_upload: bool = False
+
+
+@dataclass
 class BotConfig:
     token: str = ""
     api_base_url: str = ""
     allowed_users: set[int] = field(default_factory=set)
     aria2: Aria2Config = field(default_factory=Aria2Config)
     onedrive: OneDriveConfig = field(default_factory=OneDriveConfig)
+    telegram_channel: TelegramChannelConfig = field(default_factory=TelegramChannelConfig)
 
     @classmethod
     def from_env(cls) -> "BotConfig":
@@ -85,10 +95,19 @@ class BotConfig:
             remote_path=os.environ.get("ONEDRIVE_REMOTE_PATH", "/aria2bot"),
         )
 
+        # 解析 Telegram 频道存储配置
+        telegram_channel = TelegramChannelConfig(
+            enabled=os.environ.get("TELEGRAM_CHANNEL_ENABLED", "").lower() == "true",
+            channel_id=os.environ.get("TELEGRAM_CHANNEL_ID", ""),
+            auto_upload=os.environ.get("TELEGRAM_CHANNEL_AUTO_UPLOAD", "").lower() == "true",
+            delete_after_upload=os.environ.get("TELEGRAM_CHANNEL_DELETE_AFTER_UPLOAD", "").lower() == "true",
+        )
+
         return cls(
             token=token,
             api_base_url=os.environ.get("TELEGRAM_API_BASE_URL", ""),
             allowed_users=allowed_users,
             aria2=aria2,
             onedrive=onedrive,
+            telegram_channel=telegram_channel,
         )
