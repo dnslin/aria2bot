@@ -1,7 +1,9 @@
 services:
   aria2bot:
-    build: .
+    # 方式一：使用预构建镜像（推荐）
     image: dnslin/aria2bot:latest
+    # 方式二：本地构建（取消下行注释，注释上行）
+    # build: .
     container_name: aria2bot
     restart: unless-stopped
     volumes:
@@ -14,3 +16,4 @@ services:
     # 可选：暴露 aria2 RPC 端口（如需外部访问）
     # ports:
     #   - "6800:6800"
+
