@@ -22,7 +22,7 @@ from src.core import (
     ARIA2_CONF,
     DOWNLOAD_DIR,
 )
-from src.core.config import OneDriveConfig, TelegramChannelConfig
+from src.core.config import OneDriveConfig, TelegramChannelConfig, save_cloud_config
 from src.cloud.base import UploadProgress, UploadStatus
 from src.aria2 import Aria2Installer, Aria2ServiceManager
 from src.aria2.rpc import Aria2RpcClient, DownloadTask, _format_size
@@ -36,6 +36,9 @@ from src.telegram.keyboards import (
     build_cloud_menu_keyboard,
     build_cloud_settings_keyboard,
     build_detail_keyboard_with_upload,
+    build_onedrive_menu_keyboard,
+    build_telegram_channel_menu_keyboard,
+    build_telegram_channel_settings_keyboard,
 )
 
 # Reply Keyboard 按钮文本到命令的映射
@@ -109,6 +112,7 @@ class Aria2BotAPI:
         self._telegram_channel = None
         self._api_base_url = api_base_url
         self._channel_uploaded_gids: set[str] = set()  # 已上传到频道的 GID
+        self._pending_channel_input: dict[int, bool] = {}  # 等待用户输入频道ID
 
     async def _check_permission(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """检查用户权限，返回 True 表示有权限"""
@@ -146,6 +150,34 @@ class Aria2BotAPI:
             is_local_api = bool(self._api_base_url)
             self._telegram_channel = TelegramChannelClient(self._telegram_channel_config, bot, is_local_api)
         return self._telegram_channel
+
+    def _recreate_telegram_channel_client(self, bot):
+        """重新创建 Telegram 频道客户端（配置更新后调用）"""
+        self._telegram_channel = None
+        return self._get_telegram_channel_client(bot)
+
+    async def _delete_local_file(self, local_path, gid: str) -> tuple[bool, str]:
+        """删除本地文件，返回 (成功, 消息)"""
+        import shutil
+        from pathlib import Path
+        if isinstance(local_path, str):
+            local_path = Path(local_path)
+        try:
+            if local_path.is_dir():
+                shutil.rmtree(local_path)
+            else:
+                local_path.unlink()
+            logger.info(f"已删除本地文件 GID={gid}: {local_path}")
+            return True, "🗑️ 本地文件已删除"
+        except Exception as e:
+            logger.error(f"删除本地文件失败 GID={gid}: {e}")
+            return False, f"⚠️ 删除本地文件失败: {e}"
+
+    def _save_cloud_config(self) -> bool:
+        """保存云存储配置"""
+        if self._onedrive_config and self._telegram_channel_config:
+            return save_cloud_config(self._onedrive_config, self._telegram_channel_config)
+        return False
 
     async def _reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
         if update.effective_message:
@@ -688,15 +720,22 @@ class Aria2BotAPI:
         ))
 
     async def _do_auto_upload(
-        self, client, local_path, remote_path: str, task_name: str, chat_id: int, gid: str
-    ) -> None:
-        """后台执行自动上传任务"""
-        import shutil
+        self, client, local_path, remote_path: str, task_name: str, chat_id: int, gid: str,
+        skip_delete: bool = False
+    ) -> bool:
+        """后台执行自动上传任务
+
+        Args:
+            skip_delete: 是否跳过删除（用于并行上传协调）
+
+        Returns:
+            上传是否成功
+        """
         from .app import _bot_instance  # 获取全局 bot 实例
 
         if _bot_instance is None:
             logger.error(f"自动上传失败：无法获取 bot 实例 GID={gid}")
-            return
+            return False
 
         # 发送上传开始通知
         try:
@@ -706,7 +745,7 @@ class Aria2BotAPI:
             )
         except Exception as e:
             logger.error(f"自动上传失败：发送消息失败 GID={gid}: {e}")
-            return
+            return False
 
         loop = asyncio.get_running_loop()
 
@@ -734,26 +773,24 @@ class Aria2BotAPI:
 
             if success:
                 result_text = f"✅ 自动上传成功: {task_name}"
-                if self._onedrive_config and self._onedrive_config.delete_after_upload:
-                    try:
-                        if local_path.is_dir():
-                            shutil.rmtree(local_path)
-                        else:
-                            local_path.unlink()
-                        result_text += "\n🗑️ 本地文件已删除"
-                    except Exception as e:
-                        result_text += f"\n⚠️ 删除本地文件失败: {e}"
+                # 只有不跳过删除且配置了删除时才删除
+                if not skip_delete and self._onedrive_config and self._onedrive_config.delete_after_upload:
+                    _, delete_msg = await self._delete_local_file(local_path, gid)
+                    result_text += f"\n{delete_msg}"
                 await msg.edit_text(result_text)
                 logger.info(f"自动上传成功 GID={gid}")
+                return True
             else:
                 await msg.edit_text(f"❌ 自动上传失败: {task_name}")
                 logger.error(f"自动上传失败 GID={gid}")
+                return False
         except Exception as e:
             logger.error(f"自动上传异常 GID={gid}: {e}")
             try:
                 await msg.edit_text(f"❌ 自动上传失败: {task_name}\n错误: {e}")
             except Exception:
                 pass
+            return False
 
     async def _trigger_channel_auto_upload(self, chat_id: int, gid: str, bot) -> None:
         """触发频道自动上传"""
@@ -793,40 +830,227 @@ class Aria2BotAPI:
 
         asyncio.create_task(self._do_channel_upload(client, local_path, task.name, chat_id, gid, bot))
 
-    async def _do_channel_upload(self, client, local_path, task_name: str, chat_id: int, gid: str, bot) -> None:
-        """执行频道上传"""
-        import shutil
+    async def _do_channel_upload(
+        self, client, local_path, task_name: str, chat_id: int, gid: str, bot,
+        skip_delete: bool = False
+    ) -> bool:
+        """执行频道上传
 
+        Args:
+            skip_delete: 是否跳过删除（用于并行上传协调）
+
+        Returns:
+            上传是否成功
+        """
         try:
             msg = await bot.send_message(chat_id=chat_id, text=f"📢 正在发送到频道: {task_name}")
         except Exception as e:
             logger.error(f"频道上传失败：发送消息失败 GID={gid}: {e}")
-            return
+            return False
 
         try:
             success, result = await client.upload_file(local_path)
             if success:
                 result_text = f"✅ 已发送到频道: {task_name}"
-                if self._telegram_channel_config and self._telegram_channel_config.delete_after_upload:
-                    try:
-                        if local_path.is_dir():
-                            shutil.rmtree(local_path)
-                        else:
-                            local_path.unlink()
-                        result_text += "\n🗑️ 本地文件已删除"
-                    except Exception as e:
-                        result_text += f"\n⚠️ 删除本地文件失败: {e}"
+                # 只有不跳过删除且配置了删除时才删除
+                if not skip_delete and self._telegram_channel_config and self._telegram_channel_config.delete_after_upload:
+                    _, delete_msg = await self._delete_local_file(local_path, gid)
+                    result_text += f"\n{delete_msg}"
                 await msg.edit_text(result_text)
                 logger.info(f"频道上传成功 GID={gid}")
+                return True
             else:
                 await msg.edit_text(f"❌ 发送到频道失败: {task_name}\n原因: {result}")
                 logger.error(f"频道上传失败 GID={gid}: {result}")
+                return False
         except Exception as e:
             logger.error(f"频道上传异常 GID={gid}: {e}")
             try:
                 await msg.edit_text(f"❌ 发送到频道失败: {task_name}\n错误: {e}")
             except Exception:
                 pass
+            return False
+
+    async def _coordinated_auto_upload(self, chat_id: int, gid: str, task, bot) -> None:
+        """协调多云存储并行上传
+
+        当 OneDrive 和 Telegram 频道都启用自动上传且都启用删除时，
+        并行执行上传，全部成功后才删除本地文件。
+        """
+        from pathlib import Path
+
+        local_path = Path(task.dir) / task.name
+        if not local_path.exists():
+            logger.error(f"协调上传失败：本地文件不存在 GID={gid}")
+            return
+
+        # 检测哪些云存储需要上传
+        need_onedrive = (
+            self._onedrive_config and
+            self._onedrive_config.enabled and
+            self._onedrive_config.auto_upload
+        )
+        need_telegram = (
+            self._telegram_channel_config and
+            self._telegram_channel_config.enabled and
+            self._telegram_channel_config.auto_upload
+        )
+
+        # 检测是否需要协调删除（两个都启用删除）
+        onedrive_delete = need_onedrive and self._onedrive_config.delete_after_upload
+        telegram_delete = need_telegram and self._telegram_channel_config.delete_after_upload
+        need_coordinated_delete = onedrive_delete and telegram_delete
+
+        if need_coordinated_delete:
+            # 并行执行，跳过各自的删除，最后统一删除
+            logger.info(f"启动协调并行上传 GID={gid}")
+            await self._parallel_upload_with_coordinated_delete(
+                chat_id, gid, local_path, task.name, bot
+            )
+        else:
+            # 独立执行（保持现有逻辑）
+            if need_onedrive and gid not in self._auto_uploaded_gids:
+                self._auto_uploaded_gids.add(gid)
+                asyncio.create_task(self._trigger_auto_upload(chat_id, gid))
+
+            if need_telegram and gid not in self._channel_uploaded_gids:
+                self._channel_uploaded_gids.add(gid)
+                asyncio.create_task(self._trigger_channel_auto_upload(chat_id, gid, bot))
+
+    async def _parallel_upload_with_coordinated_delete(
+        self, chat_id: int, gid: str, local_path, task_name: str, bot
+    ) -> None:
+        """并行上传到多个云存储，全部成功后才删除文件"""
+        from .app import _bot_instance
+
+        # 准备 OneDrive 上传参数
+        onedrive_client = self._get_onedrive_client()
+        onedrive_authenticated = onedrive_client and await onedrive_client.is_authenticated()
+
+        # 计算 OneDrive 远程路径
+        try:
+            download_dir = DOWNLOAD_DIR.resolve()
+            relative_path = local_path.resolve().relative_to(download_dir)
+            remote_path = f"{self._onedrive_config.remote_path}/{relative_path.parent}"
+        except ValueError:
+            remote_path = self._onedrive_config.remote_path
+
+        # 准备 Telegram 频道客户端
+        telegram_client = self._get_telegram_channel_client(bot)
+
+        # 检查文件大小是否超过 Telegram 限制
+        telegram_size_ok = True
+        if telegram_client:
+            file_size = local_path.stat().st_size
+            if file_size > telegram_client.get_max_size():
+                telegram_size_ok = False
+                limit_mb = telegram_client.get_max_size_mb()
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⚠️ 文件 {task_name} 超过 {limit_mb}MB 限制，跳过频道上传"
+                )
+
+        # 构建上传任务列表
+        tasks = []
+        task_names = []
+
+        if onedrive_authenticated:
+            tasks.append(self._do_auto_upload(
+                onedrive_client, local_path, remote_path, task_name, chat_id, gid,
+                skip_delete=True
+            ))
+            task_names.append("onedrive")
+
+        if telegram_client and telegram_size_ok:
+            tasks.append(self._do_channel_upload(
+                telegram_client, local_path, task_name, chat_id, gid, bot,
+                skip_delete=True
+            ))
+            task_names.append("telegram")
+
+        if not tasks:
+            logger.warning(f"协调上传跳过：没有可用的上传目标 GID={gid}")
+            return
+
+        # 并行执行上传
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 分析结果
+        all_success = True
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"协调上传异常 ({task_names[i]}) GID={gid}: {result}")
+                all_success = False
+            elif result is not True:
+                all_success = False
+
+        # 只有全部成功才删除
+        if all_success and len(tasks) > 0:
+            _, delete_msg = await self._delete_local_file(local_path, gid)
+            if _bot_instance:
+                await _bot_instance.send_message(
+                    chat_id=chat_id,
+                    text=f"📦 所有上传完成: {task_name}\n{delete_msg}"
+                )
+        elif not all_success:
+            if _bot_instance:
+                await _bot_instance.send_message(
+                    chat_id=chat_id,
+                    text=f"⚠️ 部分上传失败，保留本地文件: {task_name}"
+                )
+
+    async def handle_channel_id_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """处理频道ID输入，返回 True 表示已处理"""
+        user_id = update.effective_user.id if update.effective_user else None
+        if not user_id or user_id not in self._pending_channel_input:
+            return False
+
+        # 清除等待状态
+        del self._pending_channel_input[user_id]
+
+        text = update.message.text.strip()
+        if not text:
+            await self._reply(update, context, "❌ 频道ID不能为空")
+            return True
+
+        # 验证格式
+        if not (text.startswith("@") or text.startswith("-100") or text.lstrip("-").isdigit()):
+            await self._reply(
+                update, context,
+                "❌ 无效的频道ID格式\n\n"
+                "请使用以下格式之一：\n"
+                "• `@channel_name`\n"
+                "• `-100xxxxxxxxxx`",
+                parse_mode="Markdown"
+            )
+            return True
+
+        # 更新配置
+        if self._telegram_channel_config:
+            self._telegram_channel_config.channel_id = text
+            # 重新创建客户端
+            self._recreate_telegram_channel_client(context.bot)
+            # 保存配置
+            self._save_cloud_config()
+            await self._reply(
+                update, context,
+                f"✅ 频道ID已设置为: `{text}`\n\n"
+                "请确保 Bot 已被添加为频道管理员",
+                parse_mode="Markdown"
+            )
+        else:
+            await self._reply(update, context, "❌ 频道配置未初始化")
+
+        return True
+
+    async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """处理文本消息（包括频道ID输入和按钮点击）"""
+        # 先检查是否是频道ID输入
+        if await self.handle_channel_id_input(update, context):
+            return
+
+        # 然后检查是否是按钮点击
+        await self.handle_button_text(update, context)
 
     async def handle_button_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """处理 Reply Keyboard 按钮点击"""
@@ -1209,14 +1433,25 @@ class Aria2BotAPI:
 
                 # 任务完成或出错时停止刷新
                 if task.status in ("complete", "error", "removed"):
-                    # 任务完成时检查是否需要自动上传
-                    if (task.status == "complete" and
-                        gid not in self._auto_uploaded_gids and
-                        self._onedrive_config and
-                        self._onedrive_config.enabled and
-                        self._onedrive_config.auto_upload):
-                        self._auto_uploaded_gids.add(gid)
-                        asyncio.create_task(self._trigger_auto_upload(message.chat_id, gid))
+                    # 任务完成时检查是否需要自动上传（使用协调上传）
+                    if task.status == "complete" and gid not in self._auto_uploaded_gids:
+                        from .app import _bot_instance
+                        need_onedrive = (
+                            self._onedrive_config and
+                            self._onedrive_config.enabled and
+                            self._onedrive_config.auto_upload
+                        )
+                        need_telegram = (
+                            self._telegram_channel_config and
+                            self._telegram_channel_config.enabled and
+                            self._telegram_channel_config.auto_upload
+                        )
+                        if need_onedrive or need_telegram:
+                            self._auto_uploaded_gids.add(gid)
+                            self._channel_uploaded_gids.add(gid)
+                            asyncio.create_task(
+                                self._coordinated_auto_upload(message.chat_id, gid, task, _bot_instance)
+                            )
                     break
 
                 await asyncio.sleep(2)
@@ -1269,13 +1504,8 @@ class Aria2BotAPI:
         text = f"✅ *下载完成*\n📄 {safe_name}\n📦 大小: {task.size_str}\n🆔 GID: `{task.gid}`"
         try:
             await _bot_instance.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
-            # 触发频道自动上传
-            if (self._telegram_channel_config and
-                self._telegram_channel_config.enabled and
-                self._telegram_channel_config.auto_upload and
-                task.gid not in self._channel_uploaded_gids):
-                self._channel_uploaded_gids.add(task.gid)
-                asyncio.create_task(self._trigger_channel_auto_upload(chat_id, task.gid, _bot_instance))
+            # 注意：自动上传已在 _auto_refresh_task 中通过 _coordinated_auto_upload 处理
+            # 这里不再单独触发，避免重复上传
         except Exception as e:
             logger.warning(f"发送完成通知失败 (GID={task.gid}): {e}")
 
@@ -1316,11 +1546,43 @@ class Aria2BotAPI:
 
         sub_action = parts[1]
 
-        if sub_action == "auth":
-            # 认证请求
+        # 主菜单
+        if sub_action == "menu":
+            keyboard = build_cloud_menu_keyboard()
+            await query.edit_message_text("☁️ *云存储管理*\n\n选择要配置的云存储：", parse_mode="Markdown", reply_markup=keyboard)
+
+        # OneDrive 相关
+        elif sub_action == "onedrive":
+            await self._handle_onedrive_callback(query, update, context, parts[2:] if len(parts) > 2 else [])
+
+        # Telegram 频道相关
+        elif sub_action == "telegram":
+            await self._handle_telegram_channel_callback(query, update, context, parts[2:] if len(parts) > 2 else [])
+
+        # 兼容旧的回调格式
+        elif sub_action == "auth":
             await self.cloud_auth(update, context)
         elif sub_action == "status":
-            # 状态查询
+            await self._handle_onedrive_callback(query, update, context, ["status"])
+        elif sub_action == "settings":
+            await self._handle_onedrive_callback(query, update, context, ["settings"])
+        elif sub_action == "logout":
+            await self._handle_onedrive_callback(query, update, context, ["logout"])
+        elif sub_action == "toggle":
+            await self._handle_onedrive_callback(query, update, context, ["toggle"] + parts[2:])
+
+    async def _handle_onedrive_callback(self, query, update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list) -> None:
+        """处理 OneDrive 相关回调"""
+        action = parts[0] if parts else "menu"
+
+        if action == "menu":
+            keyboard = build_onedrive_menu_keyboard()
+            await query.edit_message_text("☁️ *OneDrive 设置*", parse_mode="Markdown", reply_markup=keyboard)
+
+        elif action == "auth":
+            await self.cloud_auth(update, context)
+
+        elif action == "status":
             client = self._get_onedrive_client()
             if not client:
                 await query.edit_message_text("❌ OneDrive 未配置")
@@ -1336,39 +1598,108 @@ class Aria2BotAPI:
                 f"🗑️ 上传后删除: {'✅ 开启' if delete_after else '❌ 关闭'}\n"
                 f"📁 远程路径: `{remote_path}`"
             )
-            keyboard = build_cloud_menu_keyboard()
+            keyboard = build_onedrive_menu_keyboard()
             await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
-        elif sub_action == "settings":
-            # 设置页面
+
+        elif action == "settings":
             auto_upload = self._onedrive_config.auto_upload if self._onedrive_config else False
             delete_after = self._onedrive_config.delete_after_upload if self._onedrive_config else False
             keyboard = build_cloud_settings_keyboard(auto_upload, delete_after)
-            await query.edit_message_text("⚙️ *云存储设置*\n\n点击切换设置：", parse_mode="Markdown", reply_markup=keyboard)
-        elif sub_action == "logout":
-            # 登出
+            await query.edit_message_text("⚙️ *OneDrive 设置*\n\n点击切换设置：", parse_mode="Markdown", reply_markup=keyboard)
+
+        elif action == "logout":
             client = self._get_onedrive_client()
             if client and await client.logout():
                 await query.edit_message_text("✅ 已登出 OneDrive")
             else:
                 await query.edit_message_text("❌ 登出失败")
-        elif sub_action == "menu":
-            # 返回菜单
-            keyboard = build_cloud_menu_keyboard()
-            await query.edit_message_text("☁️ *云存储管理*", parse_mode="Markdown", reply_markup=keyboard)
-        elif sub_action == "toggle":
-            # 切换设置（注意：运行时修改配置，重启后会重置）
-            if len(parts) < 3:
+
+        elif action == "toggle":
+            if len(parts) < 2:
                 return
-            setting = parts[2]
+            setting = parts[1]
             if self._onedrive_config:
                 if setting == "auto_upload":
                     self._onedrive_config.auto_upload = not self._onedrive_config.auto_upload
                 elif setting == "delete_after":
                     self._onedrive_config.delete_after_upload = not self._onedrive_config.delete_after_upload
+                # 保存配置
+                self._save_cloud_config()
             auto_upload = self._onedrive_config.auto_upload if self._onedrive_config else False
             delete_after = self._onedrive_config.delete_after_upload if self._onedrive_config else False
             keyboard = build_cloud_settings_keyboard(auto_upload, delete_after)
-            await query.edit_message_text("⚙️ *云存储设置*\n\n点击切换设置：", parse_mode="Markdown", reply_markup=keyboard)
+            await query.edit_message_text("⚙️ *OneDrive 设置*\n\n点击切换设置：", parse_mode="Markdown", reply_markup=keyboard)
+
+    async def _handle_telegram_channel_callback(self, query, update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list) -> None:
+        """处理 Telegram 频道相关回调"""
+        action = parts[0] if parts else "menu"
+
+        if action == "menu":
+            enabled = self._telegram_channel_config.enabled if self._telegram_channel_config else False
+            channel_id = self._telegram_channel_config.channel_id if self._telegram_channel_config else ""
+            keyboard = build_telegram_channel_menu_keyboard(enabled, channel_id)
+            await query.edit_message_text("📢 *Telegram 频道设置*", parse_mode="Markdown", reply_markup=keyboard)
+
+        elif action == "info":
+            # 显示频道信息
+            if not self._telegram_channel_config:
+                await query.answer("频道未配置")
+                return
+            channel_id = self._telegram_channel_config.channel_id
+            if channel_id:
+                await query.answer(f"当前频道: {channel_id}")
+            else:
+                await query.answer("频道ID未设置，请在设置中配置")
+
+        elif action == "settings":
+            auto_upload = self._telegram_channel_config.auto_upload if self._telegram_channel_config else False
+            delete_after = self._telegram_channel_config.delete_after_upload if self._telegram_channel_config else False
+            channel_id = self._telegram_channel_config.channel_id if self._telegram_channel_config else ""
+            keyboard = build_telegram_channel_settings_keyboard(auto_upload, delete_after, channel_id)
+            await query.edit_message_text("⚙️ *Telegram 频道设置*\n\n点击切换设置：", parse_mode="Markdown", reply_markup=keyboard)
+
+        elif action == "toggle":
+            if len(parts) < 2:
+                return
+            setting = parts[1]
+            if self._telegram_channel_config:
+                if setting == "enabled":
+                    self._telegram_channel_config.enabled = not self._telegram_channel_config.enabled
+                    # 重新创建客户端
+                    self._recreate_telegram_channel_client(context.bot)
+                elif setting == "auto_upload":
+                    self._telegram_channel_config.auto_upload = not self._telegram_channel_config.auto_upload
+                elif setting == "delete_after":
+                    self._telegram_channel_config.delete_after_upload = not self._telegram_channel_config.delete_after_upload
+                # 保存配置
+                self._save_cloud_config()
+
+            # 根据来源返回不同页面
+            if setting == "enabled":
+                enabled = self._telegram_channel_config.enabled if self._telegram_channel_config else False
+                channel_id = self._telegram_channel_config.channel_id if self._telegram_channel_config else ""
+                keyboard = build_telegram_channel_menu_keyboard(enabled, channel_id)
+                await query.edit_message_text("📢 *Telegram 频道设置*", parse_mode="Markdown", reply_markup=keyboard)
+            else:
+                auto_upload = self._telegram_channel_config.auto_upload if self._telegram_channel_config else False
+                delete_after = self._telegram_channel_config.delete_after_upload if self._telegram_channel_config else False
+                channel_id = self._telegram_channel_config.channel_id if self._telegram_channel_config else ""
+                keyboard = build_telegram_channel_settings_keyboard(auto_upload, delete_after, channel_id)
+                await query.edit_message_text("⚙️ *Telegram 频道设置*\n\n点击切换设置：", parse_mode="Markdown", reply_markup=keyboard)
+
+        elif action == "set_channel":
+            # 提示用户输入频道ID
+            user_id = update.effective_user.id if update.effective_user else None
+            if user_id:
+                self._pending_channel_input = {user_id: True}
+            await query.edit_message_text(
+                "📝 *设置频道ID*\n\n"
+                "请发送频道ID或频道用户名：\n"
+                "• 频道ID格式: `-100xxxxxxxxxx`\n"
+                "• 用户名格式: `@channel_name`\n\n"
+                "注意：Bot 必须是频道管理员才能发送消息",
+                parse_mode="Markdown"
+            )
 
     async def _handle_upload_callback(self, query, update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list) -> None:
         """处理上传回调"""
@@ -1470,8 +1801,10 @@ def build_handlers(api: Aria2BotAPI) -> list:
         CommandHandler("stats", wrap_with_permission(api.global_stats)),
         # 云存储命令
         CommandHandler("cloud", wrap_with_permission(api.cloud_command)),
-        # Reply Keyboard 按钮文本处理
-        MessageHandler(filters.TEXT & filters.Regex(button_pattern), wrap_with_permission(api.handle_button_text)),
+        # Reply Keyboard 按钮文本处理（也处理频道ID输入）
+        MessageHandler(filters.TEXT & filters.Regex(button_pattern), wrap_with_permission(api.handle_text_message)),
+        # 频道ID输入处理（捕获 @channel 或 -100xxx 格式）
+        MessageHandler(filters.TEXT & filters.Regex(r"^(@[\w]+|-?\d+)$"), wrap_with_permission(api.handle_channel_id_input)),
         # OneDrive 认证回调 URL 处理
         MessageHandler(filters.TEXT & filters.Regex(r"^https://login\.microsoftonline\.com"), wrap_with_permission(api.handle_auth_callback)),
         # 种子文件处理

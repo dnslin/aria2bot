@@ -1,11 +1,15 @@
 """Configuration dataclass for aria2bot."""
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.core.constants import DOWNLOAD_DIR
+
+# 云存储配置持久化文件路径
+CLOUD_CONFIG_FILE = Path.home() / ".config" / "aria2bot" / "cloud_config.json"
 
 
 @dataclass
@@ -111,3 +115,78 @@ class BotConfig:
             onedrive=onedrive,
             telegram_channel=telegram_channel,
         )
+
+
+def save_cloud_config(onedrive: OneDriveConfig, telegram: TelegramChannelConfig) -> bool:
+    """保存云存储配置到文件
+
+    Args:
+        onedrive: OneDrive 配置
+        telegram: Telegram 频道配置
+
+    Returns:
+        是否保存成功
+    """
+    try:
+        CLOUD_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "onedrive": {
+                "auto_upload": onedrive.auto_upload,
+                "delete_after_upload": onedrive.delete_after_upload,
+                "remote_path": onedrive.remote_path,
+            },
+            "telegram_channel": {
+                "channel_id": telegram.channel_id,
+                "auto_upload": telegram.auto_upload,
+                "delete_after_upload": telegram.delete_after_upload,
+            }
+        }
+        CLOUD_CONFIG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        return True
+    except Exception:
+        return False
+
+
+def load_cloud_config() -> dict | None:
+    """从文件加载云存储配置
+
+    Returns:
+        配置字典，如果文件不存在或解析失败则返回 None
+    """
+    try:
+        if CLOUD_CONFIG_FILE.exists():
+            return json.loads(CLOUD_CONFIG_FILE.read_text())
+    except Exception:
+        pass
+    return None
+
+
+def apply_saved_config(onedrive: OneDriveConfig, telegram: TelegramChannelConfig) -> None:
+    """将保存的配置应用到配置对象（文件配置优先级低于环境变量）
+
+    只有当环境变量未设置时，才使用文件中的配置
+    """
+    saved = load_cloud_config()
+    if not saved:
+        return
+
+    # 应用 OneDrive 配置（仅当环境变量未明确设置时）
+    if "onedrive" in saved:
+        od = saved["onedrive"]
+        # auto_upload: 如果环境变量未设置，使用文件配置
+        if not os.environ.get("ONEDRIVE_AUTO_UPLOAD"):
+            onedrive.auto_upload = od.get("auto_upload", False)
+        if not os.environ.get("ONEDRIVE_DELETE_AFTER_UPLOAD"):
+            onedrive.delete_after_upload = od.get("delete_after_upload", False)
+        if not os.environ.get("ONEDRIVE_REMOTE_PATH"):
+            onedrive.remote_path = od.get("remote_path", "/aria2bot")
+
+    # 应用 Telegram 频道配置
+    if "telegram_channel" in saved:
+        tg = saved["telegram_channel"]
+        if not os.environ.get("TELEGRAM_CHANNEL_ID"):
+            telegram.channel_id = tg.get("channel_id", "")
+        if not os.environ.get("TELEGRAM_CHANNEL_AUTO_UPLOAD"):
+            telegram.auto_upload = tg.get("auto_upload", False)
+        if not os.environ.get("TELEGRAM_CHANNEL_DELETE_AFTER_UPLOAD"):
+            telegram.delete_after_upload = tg.get("delete_after_upload", False)

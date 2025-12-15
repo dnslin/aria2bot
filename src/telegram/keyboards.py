@@ -121,14 +121,10 @@ def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
 
 
 def build_cloud_menu_keyboard() -> InlineKeyboardMarkup:
-    """构建云存储管理菜单"""
+    """构建云存储主菜单 - 选择配置哪个云存储"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔐 OneDrive 认证", callback_data="cloud:auth:onedrive")],
-        [
-            InlineKeyboardButton("📊 状态", callback_data="cloud:status"),
-            InlineKeyboardButton("⚙️ 设置", callback_data="cloud:settings"),
-        ],
-        [InlineKeyboardButton("🚪 登出", callback_data="cloud:logout")],
+        [InlineKeyboardButton("☁️ OneDrive 设置", callback_data="cloud:onedrive:menu")],
+        [InlineKeyboardButton("📢 Telegram 频道设置", callback_data="cloud:telegram:menu")],
     ])
 
 
@@ -141,13 +137,51 @@ def build_upload_choice_keyboard(gid: str) -> InlineKeyboardMarkup:
 
 
 def build_cloud_settings_keyboard(auto_upload: bool, delete_after: bool) -> InlineKeyboardMarkup:
-    """构建云存储设置键盘"""
+    """构建 OneDrive 设置键盘"""
     auto_text = "✅ 自动上传" if auto_upload else "❌ 自动上传"
     delete_text = "✅ 上传后删除" if delete_after else "❌ 上传后删除"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(auto_text, callback_data="cloud:toggle:auto_upload")],
-        [InlineKeyboardButton(delete_text, callback_data="cloud:toggle:delete_after")],
+        [InlineKeyboardButton(auto_text, callback_data="cloud:onedrive:toggle:auto_upload")],
+        [InlineKeyboardButton(delete_text, callback_data="cloud:onedrive:toggle:delete_after")],
         [InlineKeyboardButton("🔙 返回", callback_data="cloud:menu")],
+    ])
+
+
+def build_onedrive_menu_keyboard() -> InlineKeyboardMarkup:
+    """构建 OneDrive 菜单键盘"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 认证", callback_data="cloud:onedrive:auth")],
+        [
+            InlineKeyboardButton("📊 状态", callback_data="cloud:onedrive:status"),
+            InlineKeyboardButton("⚙️ 设置", callback_data="cloud:onedrive:settings"),
+        ],
+        [InlineKeyboardButton("🚪 登出", callback_data="cloud:onedrive:logout")],
+        [InlineKeyboardButton("🔙 返回", callback_data="cloud:menu")],
+    ])
+
+
+def build_telegram_channel_menu_keyboard(config_enabled: bool, channel_id: str) -> InlineKeyboardMarkup:
+    """构建 Telegram 频道菜单键盘"""
+    status_text = f"📢 频道: {channel_id}" if channel_id else "📢 频道: 未设置"
+    enabled_text = "✅ 已启用" if config_enabled else "❌ 未启用"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(status_text, callback_data="cloud:telegram:info")],
+        [InlineKeyboardButton(enabled_text, callback_data="cloud:telegram:toggle:enabled")],
+        [InlineKeyboardButton("⚙️ 设置", callback_data="cloud:telegram:settings")],
+        [InlineKeyboardButton("🔙 返回", callback_data="cloud:menu")],
+    ])
+
+
+def build_telegram_channel_settings_keyboard(auto_upload: bool, delete_after: bool, channel_id: str) -> InlineKeyboardMarkup:
+    """构建 Telegram 频道设置键盘"""
+    auto_text = "✅ 自动上传" if auto_upload else "❌ 自动上传"
+    delete_text = "✅ 上传后删除" if delete_after else "❌ 上传后删除"
+    channel_text = f"📝 频道ID: {channel_id}" if channel_id else "📝 设置频道ID"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(channel_text, callback_data="cloud:telegram:set_channel")],
+        [InlineKeyboardButton(auto_text, callback_data="cloud:telegram:toggle:auto_upload")],
+        [InlineKeyboardButton(delete_text, callback_data="cloud:telegram:toggle:delete_after")],
+        [InlineKeyboardButton("🔙 返回", callback_data="cloud:telegram:menu")],
     ])
 
 

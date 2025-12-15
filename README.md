@@ -79,7 +79,7 @@ uv run main.py
 | 变量                                   | 说明                       |
 | -------------------------------------- | -------------------------- |
 | `TELEGRAM_CHANNEL_ENABLED`             | 启用频道存储（true/false） |
-| `TELEGRAM_CHANNEL_ID`                  | 频道 ID 或 @username       |
+| `TELEGRAM_CHANNEL_ID`                  | 频道 ID                    |
 | `TELEGRAM_CHANNEL_AUTO_UPLOAD`         | 下载完成后自动发送         |
 | `TELEGRAM_CHANNEL_DELETE_AFTER_UPLOAD` | 发送后删除本地文件         |
 

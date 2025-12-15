@@ -7,6 +7,7 @@ from telegram import Bot, BotCommand
 from telegram.ext import Application
 
 from src.core import BotConfig, is_aria2_installed
+from src.core.config import apply_saved_config
 from src.aria2.service import Aria2ServiceManager, get_service_mode
 from src.telegram.handlers import Aria2BotAPI, build_handlers
 from src.utils import setup_logger
@@ -46,6 +47,9 @@ async def post_init(application: Application) -> None:
 
 def create_app(config: BotConfig) -> Application:
     """创建 Telegram Application"""
+    # 应用保存的云存储配置
+    apply_saved_config(config.onedrive, config.telegram_channel)
+
     builder = Application.builder().token(config.token).post_init(post_init)
     if config.api_base_url:
         builder = builder.base_url(config.api_base_url).base_file_url(config.api_base_url + "/file")
