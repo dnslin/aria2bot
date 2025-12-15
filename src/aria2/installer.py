@@ -257,10 +257,15 @@ class Aria2Installer:
 
         try:
             if ARIA2_CONFIG_DIR.exists():
-                shutil.rmtree(ARIA2_CONFIG_DIR)
-                logger.info(f"已删除配置目录: {ARIA2_CONFIG_DIR}")
+                # 删除配置目录中的文件，而不是整个目录（兼容 Docker 挂载卷）
+                for item in ARIA2_CONFIG_DIR.iterdir():
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                logger.info(f"已清空配置目录: {ARIA2_CONFIG_DIR}")
         except Exception as exc:  # noqa: PERF203
-            logger.error(f"删除配置目录失败: {exc}")
+            logger.error(f"清空配置目录失败: {exc}")
             errors.append(exc)
 
         try:
