@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -62,3 +62,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## Docker 镜像
+
+            ```bash
+            # Docker Hub
+            docker pull dnslin/aria2bot:${{ github.ref_name }}
+
+            # GitHub Container Registry
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
