@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+
+# 环境配置
+.env
+.env.*
+!.env.example
+
+# 缓存和临时文件
+.cache
+temp
+*.log
+
+# IDE
+.vscode
+.idea
+
+# 文档和计划
+*.md
+!README.md
+
+# 测试
+tests
+.pytest_cache
+.coverage

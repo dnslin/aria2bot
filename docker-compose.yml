@@ -1,0 +1,16 @@
+services:
+  aria2bot:
+    build: .
+    image: dnslin/aria2bot:latest
+    container_name: aria2bot
+    restart: unless-stopped
+    volumes:
+      # 下载目录
+      - ./downloads:/root/downloads
+      # aria2 配置目录（包含配置文件、会话、云存储令牌）
+      - ./config:/root/.config/aria2
+    env_file:
+      - .env
+    # 可选：暴露 aria2 RPC 端口（如需外部访问）
+    # ports:
+    #   - "6800:6800"
