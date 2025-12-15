@@ -199,8 +199,8 @@ class DownloadHandlersMixin:
         text = f"✅ *下载完成*\n📄 {safe_name}\n📦 大小: {task.size_str}\n🆔 GID: `{task.gid}`"
         try:
             await _bot_instance.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
-            # 注意：自动上传已在 _auto_refresh_task 中通过 _coordinated_auto_upload 处理
-            # 这里不再单独触发，避免重复上传
+            # 触发自动上传（如果配置了的话）
+            await self._coordinated_auto_upload(chat_id, task.gid, task, _bot_instance)
         except Exception as e:
             logger.warning(f"发送完成通知失败 (GID={task.gid}): {e}")
 
