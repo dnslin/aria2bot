@@ -1,7 +1,7 @@
 services:
   aria2bot:
     # 方式一：使用预构建镜像（推荐）
-    image: dnslin/aria2bot:latest
+    image: dnslin/aria2bot:v1.1
     # 方式二：本地构建（取消下行注释，注释上行）
     # build: .
     container_name: aria2bot
