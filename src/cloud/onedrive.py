@@ -83,6 +83,10 @@ class OneDriveClient(CloudStorageBase):
     def _get_account(self) -> Account:
         """获取或创建 Account 实例"""
         if self._account is None:
+            # 确保 token 已从文件加载到缓存
+            if not self._token_backend.has_data:
+                self._token_backend.load_token()
+
             # 公共客户端只需要 client_id，不需要 client_secret
             credentials = (self.config.client_id,)
             self._account = Account(
