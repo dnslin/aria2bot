@@ -10,9 +10,10 @@ from src.core import BotConfig, is_aria2_installed
 from src.core.config import apply_saved_config
 from src.aria2.service import Aria2ServiceManager, get_service_mode
 from src.telegram.handlers import Aria2BotAPI, build_handlers
+from src.telegram.handlers.app_ref import set_bot_instance, get_bot_instance
 from src.utils import setup_logger
 
-# 全局 bot 实例，用于自动上传等功能发送消息
+# 全局 bot 实例，用于自动上传等功能发送消息（保留兼容性）
 _bot_instance: Bot | None = None
 
 # Bot 命令列表，用于 Telegram 命令自动补全
@@ -43,6 +44,8 @@ async def post_init(application: Application) -> None:
     logger.info("Setting bot commands...")
     await application.bot.set_my_commands(BOT_COMMANDS)
     _bot_instance = application.bot
+    # 设置到 app_ref 模块，供 handlers 使用
+    set_bot_instance(application.bot)
 
 
 def create_app(config: BotConfig) -> Application:
