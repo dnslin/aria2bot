@@ -225,7 +225,7 @@ class Aria2RpcClient:
         return DownloadTask(
             gid=data.get("gid", ""),
             status=data.get("status", "unknown"),
-            name=name[:40] if len(name) > 40 else name,  # 截断文件名
+            name=name,  # 保留完整文件名，显示时再截断
             total_length=int(data.get("totalLength", 0)),
             completed_length=int(data.get("completedLength", 0)),
             download_speed=int(data.get("downloadSpeed", 0)),

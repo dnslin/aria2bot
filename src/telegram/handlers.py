@@ -778,7 +778,7 @@ class Aria2BotAPI:
 
         local_path = Path(task.dir) / task.name
         if not local_path.exists():
-            logger.error(f"频道上传失败：本地文件不存在 GID={gid}")
+            logger.error(f"频道上传失败：本地文件不存在 GID={gid}, dir={task.dir}, name={task.name}, path={local_path}")
             return
 
         # 检查文件大小
